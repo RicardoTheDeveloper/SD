@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 
-//aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
 public class Downloader {
     private Queue<String> urlQueue;
 
@@ -44,6 +44,13 @@ public class Downloader {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+
+    public void enqueueURL(String url) {
+        // Add URL to the queue
+        urlQueue.add(url);
+        // You might want to start processing the queue here or have it run in a separate thread
     }
 
     private String fetchContent(String urlString) throws IOException {
