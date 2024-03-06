@@ -13,13 +13,26 @@ public class IndexingServer extends UnicastRemoteObject implements IndexingInter
     // Implementation of the submitURL method
     @Override
     public void submitURL(String url) throws RemoteException {
-        // Implementation code goes here
-        // For example, add the URL to a queue for the Downloader to process
-        System.out.println("URL received for indexing: " + url);
-        
-        // You can add the logic to pass this URL to your downloader/crawler component here.
-        // This could involve adding the URL to a queue, and the Downloader would then take URLs from this queue to process.
+        // You would place the logic to handle the submitted URL here.
+        // For example, you might add it to a queue to be processed by your web crawler.
+
+        // Ensure that the URL is valid and can be processed
+        if (isValidUrl(url)) {
+            // Add the URL to a queue for the web crawler to process
+            // Assuming you have a method in the Downloader class to add URLs to its queue
+            // Inside your submitURL method
+            Downloader downloader = new Downloader(); // Create an instance of Downloader
+            downloader.enqueueURL(url); // Call the instance method on the object
+
+            System.out.println("URL has been submitted and will be indexed: " + url);
+        } else {
+            System.out.println("Invalid URL submitted: " + url);
+        }
     }
 
-    // ... include other remote methods if there are any ...
+    private boolean isValidUrl(String url) {
+        // Implement URL validation logic here
+        // This might check for proper syntax, or if the URL is reachable, etc.
+        return true; // Placeholder return value
+    }
 }
