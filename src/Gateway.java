@@ -4,52 +4,33 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
-import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
-    private ConcurrentLinkedQueue<String> urlQueue; // List of RMI URLs for Storage Barrels
+    private ConcurrentLinkedQueue<String> urlQueue; // Queue of URLs to be indexed
 
     protected Gateway() throws RemoteException {
         super();
         urlQueue = new ConcurrentLinkedQueue<>();
     }
 
-   
-
-    /*
-     * 
-     * public String search(String query) throws RemoteException {
-        // Implement logic to select a Storage Barrel
-        String barrelUrl = selectStorageBarrel();
-        // Connect to the selected Storage Barrel and forward the search query
-        // Implement the RMI call to the selected Storage Barrel
-        return "Result from Storage Barrel";
-    }
-     */
-    
-
     @Override
     public void remoteSubmitURL(String url) throws RemoteException {
-        // Logic to submit the URL to a Storage Barrel or indexing service
-        // This could involve selecting a Storage Barrel as before
-        //String barrelUrl = selectStorageBarrel();
-        // Assuming there's a method in the Storage Barrel to handle URL submission
-        // You would need to implement the RMI call to that method here
-        System.out.println("URL submitted to Storage Barrel: " + url);
+        // Enqueue the URL to the queue
+        boolean isAdded = urlQueue.offer(url);
+        if (isAdded) {
+            System.out.println("URL enqueued: " + url);
+        } else {
+            // Log or handle the unlikely case where the URL could not be enqueued
+            System.err.println("Failed to enqueue URL: " + url);
+        }
     }
 
-    /*
-     * 
-     * private String selectStorageBarrel() {
-        // Simple random selection, replace with sophisticated load balancing if needed
-        Random random = new Random();
-        return storageBarrels.get(random.nextInt(storageBarrels.size()));
+    @Override
+    public String fetchNextUrl() throws RemoteException {
+        return urlQueue.poll(); // Retrieves and removes the head of the queue, or returns null if the queue is empty
     }
-     */
-    
 
     public static void main(String[] args) {
         try {
@@ -62,5 +43,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
             e.printStackTrace();
         }
     }
-}
 
+  
+}
