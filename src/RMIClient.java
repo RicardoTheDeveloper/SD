@@ -12,8 +12,8 @@ public class RMIClient {
             // Assuming your RMI server is running on localhost and on the default port (1099)
             Registry registry = LocateRegistry.getRegistry();
 
-            // Assuming the remote object is bound to the name "IndexServer"
-            IndexingInterface stub = (IndexingInterface) registry.lookup("IndexServer");
+            // Looking up the remote object by name "GatewayService"
+            GatewayInterface stub = (GatewayInterface) registry.lookup("GatewayService");
 
             Scanner scanner = new Scanner(System.in);
             while (true) {
@@ -24,8 +24,8 @@ public class RMIClient {
                     break;
                 }
                 
-                // Invoking the remote method using the obtained object
-                stub.submitURL(url);
+                // Call the remote method submitUrl with a single URL
+                stub.remoteSubmitURL(url);
                 System.out.println("URL submitted for indexing: " + url);
             }
             scanner.close();
@@ -35,4 +35,3 @@ public class RMIClient {
         }
     }
 }
-
