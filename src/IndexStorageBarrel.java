@@ -7,8 +7,8 @@ import java.util.*;
 public class IndexStorageBarrel extends Thread {
     private MulticastSocket socket;
     private InetAddress group;
-    private int port = 4321; // Matching the port in the working example
-    private Map<String, List<String>> index; // Data structure for storing words and URLs
+    private int port = 4321; // Multicast port
+    private Map<String, List<String>> index; // HashMap para URLs, de momento ainda está com string mas vai ser alterado
 
     public IndexStorageBarrel(String multicastAddress, int port) throws IOException {
         this.port = port;
@@ -18,7 +18,7 @@ public class IndexStorageBarrel extends Thread {
         this.index = new HashMap<>();
     }
 
-    // Method to start listening for multicast messages
+    // Começar a ouvir mensagens multicast
     public void start() {
         System.out.println("Index Storage Barrel is running...");
         while (!Thread.currentThread().isInterrupted()) {
@@ -40,9 +40,9 @@ public class IndexStorageBarrel extends Thread {
         }
     }
 
-    // Method to process received messages and update the index
+    // Método para processar a mensagem e atualizar o indice
     private void processMessage(String message) {
-        System.out.println("Received multicast message: " + message); // Add this line for debugging
+        System.out.println("Received multicast message: " + message); // print para debugging
         // Simplified processing logic
         String[] parts = message.split(";");
         if (parts.length >= 2) {
@@ -58,7 +58,7 @@ public class IndexStorageBarrel extends Thread {
 
     public static void main(String[] args) {
         try {
-            IndexStorageBarrel barrel = new IndexStorageBarrel("224.3.2.1", 4321); // Use the same multicast address and port as MulticastClient
+            IndexStorageBarrel barrel = new IndexStorageBarrel("224.3.2.1", 4321); // usar o mesmo porto que o downloader
             barrel.start();
             
         } catch (IOException e) {

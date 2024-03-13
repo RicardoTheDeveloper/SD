@@ -9,10 +9,10 @@ public class RMIClient {
 
     public static void main(String[] args) {
         try {
-            // Assuming your RMI server is running on localhost and on the default port (1099)
+            //Criar registry
             Registry registry = LocateRegistry.getRegistry();
 
-            // Looking up the remote object by name "GatewayService"
+            
             GatewayInterface stub = (GatewayInterface) registry.lookup("GatewayService");
 
             Scanner scanner = new Scanner(System.in);
@@ -24,7 +24,7 @@ public class RMIClient {
                     break;
                 }
                 
-                // Call the remote method submitUrl with a single URL
+                
                 stub.remoteSubmitURL(url);
                 System.out.println("URL submitted for indexing: " + url);
             }

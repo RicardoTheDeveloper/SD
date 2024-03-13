@@ -13,22 +13,22 @@ import java.net.MulticastSocket;
 
 public class Downloader {
 
-    private String multicastAddress = "224.3.2.1"; // Replace with your actual multicast address
-    private int port = 4321; // Replace with your actual port
+    private String multicastAddress = "224.3.2.1"; // multicast address
+    private int port = 4321; // multicast port
 
     
 
-    // Method to send messages via multicast
+    // Método para enviar mensagens multicast (UDP!)
     public void sendMulticastMessage(String message) {
         MulticastSocket socket = null;
         try {
             System.out.println("ENTREI NO SEND");
-            socket = new MulticastSocket(); // Create socket without binding it (only for sending)
+            socket = new MulticastSocket(); // Criar Socket
             InetAddress group = InetAddress.getByName(this.multicastAddress);
             byte[] buffer = message.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, this.port);
             socket.send(packet);
-            // No need for sleep here since you'll likely call this method per each URL processed
+            
         } catch (IOException e) {
             System.err.println("IOException: " + e.getMessage());
             e.printStackTrace();
@@ -41,50 +41,50 @@ public class Downloader {
 
     public static void main(String[] args) {
         try {
-            // Connecting to the RMI Registry
-            Registry registry = LocateRegistry.getRegistry("localhost", 1099); // Replace "localhost" with the actual host if different
+            // Conectar a RMI registry
+            Registry registry = LocateRegistry.getRegistry("localhost", 1099); //registry RMI para comunicar com a gateway
             GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
             Downloader downloader = new Downloader();
 
 
 
             while (true) {
-                // Fetch the next URL from the Gateway
+                // Ir buscar o url ao gateway
                 String url = gateway.fetchNextUrl();
                 if (url != null) {
                     // Process the URL
                     try {
                         Document doc = Jsoup.connect(url).get();
                         
-                        // Print the title of the web page
+                        // Printar o titulo da página
                         System.out.println("Title: " + doc.title());
 
 
-                        downloader.sendMulticastMessage(doc.title() + ";" + url); //enviar 
+                        downloader.sendMulticastMessage(doc.title() + ";" + url); //enviar msg multicast para ISB
                         
-                        // Print all paragraphs' text
+                        // printar os parágrafos
                         Elements paragraphs = doc.select("p");
                         for (Element paragraph : paragraphs) {
                             System.out.println(paragraph.text());
                             downloader.sendMulticastMessage(paragraph.text() + ";" + url);
                         }
 
-                        // Print all links with their text and href attributes
+                        // Printar todos os links
                         Elements links = doc.select("a[href]");
                         for (Element link : links) {
                             System.out.println("Text: " + link.text());
                             System.out.println("URL: " + link.attr("abs:href"));
                         }
                         
-                        // ... Include additional processing if needed ...
+                        
                         
                     } catch (IOException e) {
                         System.err.println("Error downloading content from: " + url);
                         e.printStackTrace();
                     }
                 } else {
-                    // If no URL was fetched, wait before trying again
-                    Thread.sleep(5000); // Sleep for 5 seconds
+                    // Se não tivermos nenhum url, esperar 5 segundos antes de tentar outra vez
+                    Thread.sleep(5000); // Sleep de 5 segundos
                 }
             }
         } catch (Exception e) {
