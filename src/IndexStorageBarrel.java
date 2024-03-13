@@ -1,4 +1,4 @@
-package src;
+// Remove the package declaration
 
 import java.net.*;
 import java.io.*;
