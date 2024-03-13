@@ -14,7 +14,7 @@ public class IndexStorageBarrel extends Thread {
         this.port = port;
         this.group = InetAddress.getByName(multicastAddress);
         this.socket = new MulticastSocket(this.port);
-        this.socket.joinGroup(this.group);
+        this.socket.joinGroup(new InetSocketAddress(this.group, this.port), NetworkInterface.getByInetAddress(InetAddress.getLocalHost()));
         this.index = new HashMap<>();
     }
 
