@@ -16,11 +16,15 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     }
 
     @Override
-    public void remoteSubmitURL(String url) throws RemoteException {
+    public synchronized void remoteSubmitURL(String url) throws RemoteException {
         // Meter o URL na queue
         boolean isAdded = urlQueue.offer(url);
         if (isAdded) {
+            notifyDownloader(); // Notify downloader threads
             System.out.println("URL enqueued: " + url);
+            System.out.println("DEPOIS DE ADICIONAR");
+            printQueueContent();
+
         } else {
             // print de debugging
             System.err.println("Failed to enqueue URL: " + url);
@@ -28,9 +32,78 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     }
 
     @Override
-    public String fetchNextUrl() throws RemoteException {
-        return urlQueue.poll(); // Retirar um elemento da head da queue
+    public synchronized String fetchNextUrl() throws RemoteException {
+        synchronized(urlQueue) {
+            String url = urlQueue.poll();
+            System.out.println("DEPOIS DE DAR FETCH");
+            printQueueContent();
+            return url; // Retrieve and remove the head of the queue
+        }
     }
+
+    @Override
+    public void remoteRecursiveIndexUrls() throws RemoteException {
+        // Logic for recursive indexing
+        System.out.println("Recursive indexing requested.");
+    }
+
+    @Override
+    public String remoteSearchForTerms(String[] terms) throws RemoteException {
+        // Logic for searching terms
+        System.out.println("Search for terms: " + String.join(", ", terms));
+        // Placeholder for actual search result
+        return "Results for search terms.";
+    }
+
+    @Override
+    public String remoteSearchForTermsOrdered(String[] terms) throws RemoteException {
+        // Logic for searching terms with ordering
+        System.out.println("Ordered search for terms: " + String.join(", ", terms));
+        // Placeholder for actual ordered search result
+        return "Ordered results for search terms.";
+    }
+
+    @Override
+    public String remoteGetLinksToPointingTo(String url) throws RemoteException {
+        // Logic to get links pointing to a specific URL
+        System.out.println("Getting links pointing to: " + url);
+        // Placeholder for actual links
+        return "Links pointing to the URL.";
+    }
+
+    @Override
+    public String remoteGetRealTimeSystemStatus() throws RemoteException {
+        // Logic to get real-time system status
+        System.out.println("Real-time system status requested.");
+        // Placeholder for system status
+        return "System status: OK";
+    }
+
+    @Override
+    public String remoteCheckInvertedIndex() throws RemoteException{
+        System.out.println("Checking inverted index! (2)");
+        return "print_index";
+    }
+
+
+    public void printQueueContent() {
+        System.out.println("Current URLs in the Queue:");
+        for (String url : urlQueue) {
+            System.out.println(url);
+        }
+    }
+
+
+    public synchronized void waitForUrl() throws InterruptedException{
+        while (urlQueue.isEmpty()) {
+            wait();
+        }
+    }
+    
+    public synchronized void notifyDownloader() {
+        notifyAll();
+    }
+    
 
     public static void main(String[] args) {
         try {
@@ -38,6 +111,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
             Registry registry = LocateRegistry.createRegistry(1099); // porto standard RMI registry
             registry.rebind("GatewayService", server);
             System.out.println("Gateway is ready.");
+            
         } catch (Exception e) {
             System.err.println("Gateway exception: " + e.toString());
             e.printStackTrace();
