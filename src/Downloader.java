@@ -8,8 +8,12 @@ import org.jsoup.select.Elements;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
@@ -35,33 +39,35 @@ public class Downloader implements Runnable {
     
 
     // Método para enviar mensagens multicast (UDP!)
-    public void sendMulticastMessage(String message) {
-        MulticastSocket socket = null;
-        try {
-            socket = new MulticastSocket(); // Create Socket
-            InetAddress group = InetAddress.getByName(this.multicastAddress);
-            byte[] buffer = message.getBytes();
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, this.port);
-            socket.send(packet);
-    
-        } catch (IOException e) {
-            System.err.println("IOException: " + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            if (socket != null) {
-                socket.close();
-            }
+    public void sendMulticastMessage(PageInfo pageInfo) {
+    MulticastSocket socket = null;
+    try {
+        socket = new MulticastSocket(); // Create Socket
+        InetAddress group = InetAddress.getByName(this.multicastAddress);
+        
+        // Serialize PageInfo object to byte array
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
+        objectOutputStream.writeObject(pageInfo);
+        objectOutputStream.flush();
+        byte[] buffer = byteStream.toByteArray();
+
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, this.port);
+        socket.send(packet);
+
+    } catch (IOException e) {
+        System.err.println("IOException: " + e.getMessage());
+        e.printStackTrace();
+    } finally {
+        if (socket != null) {
+            socket.close();
         }
     }
+ }
 
-    private String extractSnippet(String text) {
-        // Let's take first 100 words for snippet for now
-        String[] words = text.split("\\s+");
-        StringBuilder snippetBuilder = new StringBuilder();
-        for (int i = 0; i < words.length && i < 100; i++) {
-            snippetBuilder.append(words[i]).append(" ");
-        }
-        return snippetBuilder.toString().trim();
+    private String extractSnippet(Document doc) {
+        Element firstParagraph = doc.selectFirst("p");
+        return firstParagraph != null ? firstParagraph.text() : "";
     }
 
     
@@ -73,34 +79,28 @@ public class Downloader implements Runnable {
             if (url != null && !url.isEmpty()) {
                 Document doc = Jsoup.connect(url).get();
                 String title = doc.title();
-                String snippet = extractSnippet(doc.text()); // Your implementation to extract a snippet.
+                String snippet = extractSnippet(doc); // Extract first paragraph as snippet
     
-                // Send title and snippet once.
-                sendMulticastMessage("type ; index ; title ; " + title + " ; snippet ; " + snippet);
-    
-                // For each word in the text, send a separate message.
-                Elements paragraphs = doc.select("p");
-                for (Element paragraph : paragraphs) {
-                    for (String word : paragraph.text().split("\\s+")) {
-                        if (!word.isEmpty()) {
-                            sendMulticastMessage("type ; index ; word ; " + word.toLowerCase() + " ; url ; " + url);
+                Set<String> uniqueWords = new HashSet<>();
+                doc.body().select("p").forEach(p -> {
+                    for (String word : p.text().split("\\s+")) {
+                        // Remove non-word characters and convert to lower case
+                        String cleanedWord = word.replaceAll("\\W+", "").toLowerCase();
+                        if (!cleanedWord.isEmpty()) {
+                            uniqueWords.add(cleanedWord);
                         }
                     }
-                }
+                });
+
+                PageInfo page = new PageInfo(url,title,snippet,uniqueWords);
     
-                // For each link, send a separate message.
-                Elements links = doc.select("a[href]");
-                for (Element link : links) {
-                    sendMulticastMessage("type ; link ; url ; " + link.attr("abs:href"));
-                }
+                
     
+                sendMulticastMessage(page);
             }
-        }
-        
-        catch (IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
-         
     }
     
     private void handleSearchCommand(String searchTerms) {

@@ -2,94 +2,80 @@ package src;
 
 import java.net.*;
 import java.io.*;
-import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-public class IndexStorageBarrel {
+public class IndexStorageBarrel implements Runnable {
     private MulticastSocket socket;
     private InetAddress group;
     private int port;
-    
-    private Map<String, HashSet<String>> index; // Word to URLs
-    private Map<String, PageInfo> urlDetails; // URL to PageInfo
-    private List<String> messageQueue; // Message queue for the messages
-    private MessageProcessor processor; // MessageProcessor thread
+
+    private ConcurrentHashMap<String, PageInfo> pageInfoMap = new ConcurrentHashMap<>();
+    private ExecutorService executorService;
 
     public IndexStorageBarrel(String multicastAddress, int port) throws IOException {
         this.port = port;
         this.group = InetAddress.getByName(multicastAddress);
         this.socket = new MulticastSocket(this.port);
         this.socket.joinGroup(this.group);
-        this.index = new HashMap<>();
-        this.urlDetails = new HashMap<>();
-        this.messageQueue = Collections.synchronizedList(new ArrayList<String>());
-        this.processor = new MessageProcessor(this.index, this.urlDetails, this.messageQueue);
+        this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
 
-    public void startListening() {
-        System.out.println("Index Storage Barrel is running...");
+    @Override
+    public void run() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                byte[] buffer = new byte[256];
+                byte[] buffer = new byte[1024];
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
 
-                String message = new String(packet.getData(), 0, packet.getLength());
-                processMessage(message);
-
-                
-                printInvertedIndex();
-                
+                // Process the received packet in a separate thread
+                executorService.submit(() -> processPacket(packet));
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
+        executorService.shutdown();
     }
 
-    public void printInvertedIndex() {
-        System.out.println("PRINTING INDEX");
-        synchronized (index) {
-            for (Map.Entry<String, HashSet<String>> entry : index.entrySet()) {
-                String word = entry.getKey();
-                HashSet<String> urls = entry.getValue();
-                System.out.println("Word: " + word);
-                for (String url : urls) {
-                    System.out.println(" - " + url);
-                }
-            }
+    private void processPacket(DatagramPacket packet) {
+        try {
+            ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData());
+            ObjectInputStream ois = new ObjectInputStream(byteStream);
+            PageInfo pageInfo = (PageInfo) ois.readObject();
+
+            pageInfoMap.put(pageInfo.getUrl(), pageInfo);
+            printPageInfo(pageInfo); 
+
+            savePageInfoToFile(pageInfo); // Save to file
+        } catch (IOException | ClassNotFoundException e) {
+            e.printStackTrace();
         }
     }
 
-    private void processMessage(String message) {
-        String[] parts = message.split(" ; ");
-        if (parts.length >= 2 && "type".equals(parts[0]) && "index".equals(parts[1])) {
-            String key, value;
-            for (int i = 2; i < parts.length; i += 2) {
-                key = parts[i].toLowerCase();
-                value = parts[i + 1];
-    
-                switch (key) {
-                    case "word":
-                        String url = parts[i + 3];
-                        synchronized (index) {
-                            index.computeIfAbsent(value, k -> new HashSet<>()).add(url);
-                        }
-                        i += 2; // Skip the next key-value pair as it's part of the current one
-                        break;
-                    case "title":
-                    case "snippet":
-                        // Additional processing for title and snippet if needed.
-                        break;
-                }
-            }
+    private void printPageInfo(PageInfo pageInfo) {
+        System.out.println("Received PageInfo:");
+        System.out.println("URL: " + pageInfo.getUrl());
+        System.out.println("Title: " + pageInfo.getTitle());
+        System.out.println("Snippet: " + pageInfo.getSnippet());
+        System.out.println("Words: " + pageInfo.getUniqueWords());
+    }
+
+
+    private void savePageInfoToFile(PageInfo pageInfo) {
+        try (FileOutputStream fileOut = new FileOutputStream("pageInfoObjects.dat", true); // Append mode
+             ObjectOutputStream out = new ObjectOutputStream(fileOut)) {
+            out.writeObject(pageInfo);
+        } catch (IOException i) {
+            i.printStackTrace();
         }
     }
-    
 
     public static void main(String[] args) {
         try {
             IndexStorageBarrel barrel = new IndexStorageBarrel("224.3.2.1", 4321);
-            barrel.startListening(); // Start listening for multicast messages
-            
+            new Thread(barrel).start();
         } catch (IOException e) {
             System.out.println("Error starting Index Storage Barrel: " + e.getMessage());
         }

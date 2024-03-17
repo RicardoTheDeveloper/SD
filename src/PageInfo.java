@@ -1,16 +1,23 @@
 package src;
 
 import java.util.Objects;
+import java.util.Set;
+import java.io.Serializable;
+import java.util.HashSet;
 
-public class PageInfo {
+public class PageInfo implements Serializable{
     private String url;
     private String title;
     private String snippet;
+    private Set<String> uniqueWords = new HashSet<>(); 
 
-    public PageInfo(String url, String title, String snippet) {
+    
+
+    public PageInfo(String url, String title, String snippet,Set<String> uniqueWords)  {
         this.url = url;
         this.title = title;
         this.snippet = snippet;
+        this.uniqueWords = uniqueWords;
     }
 
     // Getters
@@ -26,6 +33,10 @@ public class PageInfo {
         return snippet;
     }
 
+    public Set<String> getUniqueWords(){
+        return uniqueWords;
+    }
+
     // Setters
     public void setUrl(String url) {
         this.url = url;
@@ -37,6 +48,10 @@ public class PageInfo {
 
     public void setSnippet(String snippet) {
         this.snippet = snippet;
+    }
+
+    public void setUniqueWords(Set<String> uniqueWords){
+        this.uniqueWords = uniqueWords;
     }
 
     @Override
