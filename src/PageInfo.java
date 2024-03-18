@@ -3,21 +3,26 @@ package src;
 import java.util.Objects;
 import java.util.Set;
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 
 public class PageInfo implements Serializable{
     private String url;
     private String title;
     private String snippet;
     private Set<String> uniqueWords = new HashSet<>(); 
+    private Map<String, Integer> wordCount = new HashMap<>(); // New field to store word counts
 
     
 
-    public PageInfo(String url, String title, String snippet,Set<String> uniqueWords)  {
+    public PageInfo(String url, String title, String snippet,Set<String> uniqueWords,Map<String,Integer> WordCount)  {
         this.url = url;
         this.title = title;
         this.snippet = snippet;
         this.uniqueWords = uniqueWords;
+        this.wordCount = WordCount;
+        
     }
 
     // Getters
@@ -52,6 +57,21 @@ public class PageInfo implements Serializable{
 
     public void setUniqueWords(Set<String> uniqueWords){
         this.uniqueWords = uniqueWords;
+    }
+
+    public void updateWordCount(String word, int count) {
+        wordCount.put(word, count);
+    }
+
+    public int getWordCount(String word) {
+        return wordCount.getOrDefault(word, 0);
+    }
+
+    public void showWordCount() {
+        System.out.println("Word Count:");
+        for (Map.Entry<String, Integer> entry : wordCount.entrySet()) {
+            System.out.println(entry.getKey() + ": " + entry.getValue());
+        }
     }
 
     @Override

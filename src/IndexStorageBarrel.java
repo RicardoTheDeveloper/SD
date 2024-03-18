@@ -2,6 +2,8 @@ package src;
 
 import java.net.*;
 import java.io.*;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -12,6 +14,7 @@ public class IndexStorageBarrel implements Runnable {
     private int port;
 
     private ConcurrentHashMap<String, PageInfo> pageInfoMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Set<String>> invertedIndex = new ConcurrentHashMap<>();
     private ExecutorService executorService;
 
     public IndexStorageBarrel(String multicastAddress, int port) throws IOException {
@@ -46,12 +49,23 @@ public class IndexStorageBarrel implements Runnable {
             PageInfo pageInfo = (PageInfo) ois.readObject();
 
             pageInfoMap.put(pageInfo.getUrl(), pageInfo);
-            printPageInfo(pageInfo); 
+            updateInvertedIndex(pageInfo);
+            printPageInfo(pageInfo);
+            
+            printInvertedIndex();
 
             savePageInfoToFile(pageInfo); // Save to file
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         }
+    }
+
+
+    private void updateInvertedIndex(PageInfo pageInfo) {
+        String url = pageInfo.getUrl();
+        pageInfo.getUniqueWords().forEach(word -> {
+            invertedIndex.computeIfAbsent(word, k -> new HashSet<>()).add(url);
+        });
     }
 
     private void printPageInfo(PageInfo pageInfo) {
@@ -60,6 +74,15 @@ public class IndexStorageBarrel implements Runnable {
         System.out.println("Title: " + pageInfo.getTitle());
         System.out.println("Snippet: " + pageInfo.getSnippet());
         System.out.println("Words: " + pageInfo.getUniqueWords());
+        pageInfo.showWordCount();
+    }
+
+    private void printInvertedIndex() {
+        System.out.println("PRINTING INVERTED INDEX");
+        invertedIndex.forEach((word, urls) -> {
+            System.out.println("Word: " + word);
+            urls.forEach(url -> System.out.println(" - " + url));
+        });
     }
 
 

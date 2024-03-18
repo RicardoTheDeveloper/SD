@@ -8,7 +8,9 @@ import org.jsoup.select.Elements;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.io.ByteArrayOutputStream;
@@ -80,23 +82,23 @@ public class Downloader implements Runnable {
                 Document doc = Jsoup.connect(url).get();
                 String title = doc.title();
                 String snippet = extractSnippet(doc); // Extract first paragraph as snippet
-    
+                
                 Set<String> uniqueWords = new HashSet<>();
+                Map<String, Integer> wordCount = new HashMap<>(); // Map to count word occurrences
+
                 doc.body().select("p").forEach(p -> {
                     for (String word : p.text().split("\\s+")) {
-                        // Remove non-word characters and convert to lower case
-                        String cleanedWord = word.replaceAll("\\W+", "").toLowerCase();
+                        // Remove specific punctuation marks while keeping letters and digits
+                        String cleanedWord = word.replaceAll("[.,;:?!\"]+", "").toLowerCase();
                         if (!cleanedWord.isEmpty()) {
                             uniqueWords.add(cleanedWord);
+                            wordCount.put(cleanedWord, wordCount.getOrDefault(cleanedWord, 0) + 1);
                         }
                     }
                 });
 
-                PageInfo page = new PageInfo(url,title,snippet,uniqueWords);
-    
-                
-    
-                sendMulticastMessage(page);
+                PageInfo pageInfo = new PageInfo(url, title, snippet, uniqueWords, wordCount);
+                sendMulticastMessage(pageInfo);
             }
         } catch (IOException e) {
             e.printStackTrace();
