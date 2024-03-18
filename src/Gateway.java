@@ -4,6 +4,7 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class Gateway extends UnicastRemoteObject implements GatewayInterface {
@@ -49,11 +50,17 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     @Override
     public String remoteSearchForTerms(String[] terms) throws RemoteException {
-        // Logic for searching terms
-        System.out.println("Search for terms: " + String.join(", ", terms));
-        // Placeholder for actual search result
-        return "Results for search terms.";
+        try {
+            Registry registry = LocateRegistry.getRegistry("localhost", 1100);
+            IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup("IndexStorageBarrelService");
+
+            return barrelStub.searchPagesWithTerms(terms);
+        } catch (Exception e) {
+            System.err.println("Error in remoteSearchForTerms: " + e.getMessage());
+            return "Search failed.";
+        }
     }
+
 
     @Override
     public String remoteSearchForTermsOrdered(String[] terms) throws RemoteException {
@@ -84,6 +91,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         System.out.println("Checking inverted index! (2)");
         return "print_index";
     }
+
+   
 
 
     public void printQueueContent() {

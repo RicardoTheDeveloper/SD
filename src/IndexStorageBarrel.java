@@ -1,14 +1,20 @@
 package src;
 
 import java.net.*;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.io.*;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class IndexStorageBarrel implements Runnable {
+public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStorageBarrelInterface, Runnable {
     private MulticastSocket socket;
     private InetAddress group;
     private int port;
@@ -29,7 +35,8 @@ public class IndexStorageBarrel implements Runnable {
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                byte[] buffer = new byte[1024];
+                byte[] buffer = new byte[4096]; // Increased buffer size
+
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
 
@@ -41,6 +48,74 @@ public class IndexStorageBarrel implements Runnable {
         }
         executorService.shutdown();
     }
+
+    @Override
+public String searchPagesWithTerms(String[] terms) throws RemoteException {
+    System.out.println("Entered searchPagesWithTerms");
+    Set<String> resultPages = new HashSet<>();
+    boolean isFirstTerm = true;
+    StringBuilder resultBuilder = new StringBuilder();
+
+    for (String term : terms) {
+        term = term.toLowerCase();
+        Set<String> pagesWithTerm = new HashSet<>();
+
+        // Search in content
+        Set<String> contentPages = invertedIndex.get(term);
+        if (contentPages != null) {
+            pagesWithTerm.addAll(contentPages);
+        }
+
+        // Search in titles
+        for (PageInfo pageInfo : pageInfoMap.values()) {
+            if (pageInfo.getTitle().toLowerCase().contains(term)) {
+                pagesWithTerm.add(pageInfo.getUrl());
+            }
+        }
+
+        // Combine results
+        if (isFirstTerm) {
+            resultPages.addAll(pagesWithTerm);
+            isFirstTerm = false;
+        } else {
+            resultPages.retainAll(pagesWithTerm);
+        }
+    }
+
+    // Handling no results case
+    if (resultPages.isEmpty() && !isFirstTerm) {
+        for (String term : terms) {
+            term = term.toLowerCase();
+            Set<String> contentPages = invertedIndex.get(term);
+            if (contentPages != null) {
+                resultPages.addAll(contentPages);
+            }
+            for (PageInfo pageInfo : pageInfoMap.values()) {
+                if (pageInfo.getTitle().toLowerCase().contains(term)) {
+                    resultPages.add(pageInfo.getUrl());
+                }
+            }
+        }
+    }
+
+    // Formatting the results
+    int count = 0;
+    for (String url : resultPages) {
+        PageInfo pageInfo = fetchPageInfo(url);
+
+        resultBuilder.append("Title: ").append(pageInfo.getTitle())
+                     .append("\nURL: ").append(pageInfo.getUrl())
+                     .append("\nSnippet: ").append(pageInfo.getSnippet())
+                     .append("\n---------------------------------------\n");
+
+        if (++count % 10 == 0 && count < resultPages.size()) {
+            resultBuilder.append("\n-- Next group of results --\n\n");
+        }
+    }
+
+    return count == 0 ? "No results found for the given terms." : resultBuilder.toString();
+}
+
 
     public PageInfo fetchPageInfo(String url) {
         return pageInfoMap.get(url);
@@ -136,10 +211,25 @@ public class IndexStorageBarrel implements Runnable {
 
     public static void main(String[] args) {
         try {
+            // Create the IndexStorageBarrel instance
             IndexStorageBarrel barrel = new IndexStorageBarrel("224.3.2.1", 4321);
+    
+            // The object is already exported in its constructor, so no need to export again
+    
+            // Register the object with the RMI registry
+            Registry registry = LocateRegistry.createRegistry(1100);
+            registry.rebind("IndexStorageBarrelService", barrel); // Directly pass the barrel object
+    
+            // Start the thread for processing incoming multicast packets
             new Thread(barrel).start();
+    
+            System.out.println("Index Storage Barrel RMI Service is ready.");
         } catch (IOException e) {
             System.out.println("Error starting Index Storage Barrel: " + e.getMessage());
+            e.printStackTrace();
         }
     }
+    
+
+
 }

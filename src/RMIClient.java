@@ -41,7 +41,7 @@ public class RMIClient {
                         break;
                     case 3:
                         // Handle search with specific terms
-                        System.out.println("Search functionality is not yet implemented.");
+                        handleSearchWithSpecificTerms(scanner, stub);
                         break;
                     case 4:
                         // Handle ordered search results
@@ -100,6 +100,21 @@ private static void handleCheckingInvertedIndex(GatewayInterface stub){
 
     }
 
+}
+
+private static void handleSearchWithSpecificTerms(Scanner scanner, GatewayInterface stub) {
+    try {
+        System.out.print("Enter search terms (separated by spaces): ");
+        String searchQuery = scanner.nextLine();
+        String[] terms = searchQuery.split("\\s+");
+
+        // Calling the search method in the Gateway
+        String searchResults = stub.remoteSearchForTerms(terms);
+        System.out.println("Search Results: \n" + searchResults);
+    } catch (RemoteException e) {
+        System.err.println("Error processing search request.");
+        e.printStackTrace();
+    }
 }
 
 

@@ -42,30 +42,37 @@ public class Downloader implements Runnable {
 
     // Método para enviar mensagens multicast (UDP!)
     public void sendMulticastMessage(PageInfo pageInfo) {
-    MulticastSocket socket = null;
-    try {
-        socket = new MulticastSocket(); // Create Socket
-        InetAddress group = InetAddress.getByName(this.multicastAddress);
-        
-        // Serialize PageInfo object to byte array
-        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
-        objectOutputStream.writeObject(pageInfo);
-        objectOutputStream.flush();
-        byte[] buffer = byteStream.toByteArray();
-
-        DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, this.port);
-        socket.send(packet);
-
-    } catch (IOException e) {
-        System.err.println("IOException: " + e.getMessage());
-        e.printStackTrace();
-    } finally {
-        if (socket != null) {
-            socket.close();
+        MulticastSocket socket = null;
+        try {
+            socket = new MulticastSocket(); // Create Socket
+            InetAddress group = InetAddress.getByName(this.multicastAddress);
+    
+            // Serialize PageInfo object to byte array
+            ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+            ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
+            objectOutputStream.writeObject(pageInfo);
+            objectOutputStream.flush();
+            byte[] buffer = byteStream.toByteArray();
+    
+            // Check if the size of the serialized object is within the UDP packet size limit
+            if (buffer.length > 65507) {
+                System.err.println("Serialized PageInfo object is too large for UDP packet (" + buffer.length + " bytes)");
+                return; // Skipping sending this packet
+            }
+    
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, this.port);
+            socket.send(packet);
+    
+        } catch (IOException e) {
+            System.err.println("IOException: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            if (socket != null) {
+                socket.close();
+            }
         }
     }
- }
+    
 
     private String extractSnippet(Document doc) {
         Element firstParagraph = doc.selectFirst("p");

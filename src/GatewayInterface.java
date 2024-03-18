@@ -15,4 +15,5 @@ public interface GatewayInterface extends Remote {
     public void waitForUrl() throws InterruptedException, RemoteException;
     public void notifyDownloader() throws RemoteException;
     
+    
 }
