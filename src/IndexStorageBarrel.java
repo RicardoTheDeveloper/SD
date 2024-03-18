@@ -42,6 +42,10 @@ public class IndexStorageBarrel implements Runnable {
         executorService.shutdown();
     }
 
+    public PageInfo fetchPageInfo(String url) {
+        return pageInfoMap.get(url);
+    }
+
     private void processPacket(DatagramPacket packet) {
         try {
             ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData());
@@ -94,6 +98,41 @@ public class IndexStorageBarrel implements Runnable {
             i.printStackTrace();
         }
     }
+
+    public void searchAndDisplayResults(String[] searchTerms) {
+        Set<String> pagesContainingAllTerms = new HashSet<>();
+        boolean isFirstTerm = true;
+    
+        for (String term : searchTerms) {
+            Set<String> pagesWithTerm = invertedIndex.get(term.toLowerCase());
+            if (pagesWithTerm == null) {
+                pagesContainingAllTerms.clear();
+                break;
+            }
+            if (isFirstTerm) {
+                pagesContainingAllTerms.addAll(pagesWithTerm);
+                isFirstTerm = false;
+            } else {
+                pagesContainingAllTerms.retainAll(pagesWithTerm);
+            }
+        }
+    
+        displayResults(pagesContainingAllTerms);
+    }
+    
+    private void displayResults(Set<String> pageUrls) {
+        int count = 0;
+        for (String url : pageUrls) {
+            PageInfo pageInfo = fetchPageInfo(url);
+            System.out.println("Title: " + pageInfo.getTitle());
+            System.out.println("URL: " + pageInfo.getUrl());
+            System.out.println("Snippet: " + pageInfo.getSnippet());
+            System.out.println("---------------------------------------");
+            
+            if (++count == 10) break; // Show only the first 10 results
+        }
+    }
+    
 
     public static void main(String[] args) {
         try {

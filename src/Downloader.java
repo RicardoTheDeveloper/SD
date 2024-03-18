@@ -104,6 +104,8 @@ public class Downloader implements Runnable {
             e.printStackTrace();
         }
     }
+
+    
     
     private void handleSearchCommand(String searchTerms) {
         // Logic to perform the search
