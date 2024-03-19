@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.GZIPOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
@@ -46,23 +47,24 @@ public class Downloader implements Runnable {
         try {
             socket = new MulticastSocket(); // Create Socket
             InetAddress group = InetAddress.getByName(this.multicastAddress);
-    
-            // Serialize PageInfo object to byte array
+
+            // Compress and serialize PageInfo object to byte array
             ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-            ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
-            objectOutputStream.writeObject(pageInfo);
-            objectOutputStream.flush();
-            byte[] buffer = byteStream.toByteArray();
-    
-            // Check if the size of the serialized object is within the UDP packet size limit
-            if (buffer.length > 65507) {
-                System.err.println("Serialized PageInfo object is too large for UDP packet (" + buffer.length + " bytes)");
+            try (GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteStream);
+                 ObjectOutputStream objectOutputStream = new ObjectOutputStream(gzipOutputStream)) {
+                objectOutputStream.writeObject(pageInfo);
+            }
+            byte[] compressedData = byteStream.toByteArray();
+
+            // Check if the size of the compressed data is within the UDP packet size limit
+            if (compressedData.length > 65507) {
+                System.err.println("Compressed data is too large for UDP packet (" + compressedData.length + " bytes)");
                 return; // Skipping sending this packet
             }
-    
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, this.port);
+
+            DatagramPacket packet = new DatagramPacket(compressedData, compressedData.length, group, this.port);
             socket.send(packet);
-    
+
         } catch (IOException e) {
             System.err.println("IOException: " + e.getMessage());
             e.printStackTrace();

@@ -13,11 +13,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
+import java.text.Normalizer;
+import java.util.regex.Pattern;
 
 public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStorageBarrelInterface, Runnable {
     private MulticastSocket socket;
     private InetAddress group;
     private int port;
+    final int bufferSize = 10 * 1024 * 1024;
 
     private ConcurrentHashMap<String, PageInfo> pageInfoMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, Set<String>> invertedIndex = new ConcurrentHashMap<>();
@@ -31,11 +36,17 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
 
+    private String normalizeString(String input) {
+    String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);
+    Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
+    return pattern.matcher(normalized).replaceAll("").toLowerCase();
+    }
+
     @Override
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                byte[] buffer = new byte[4096]; // Increased buffer size
+                byte[] buffer = new byte[bufferSize]; // Increased buffer size
 
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
@@ -49,6 +60,8 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         executorService.shutdown();
     }
 
+
+
     @Override
 public String searchPagesWithTerms(String[] terms) throws RemoteException {
     System.out.println("Entered searchPagesWithTerms");
@@ -57,18 +70,20 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
     StringBuilder resultBuilder = new StringBuilder();
 
     for (String term : terms) {
-        term = term.toLowerCase();
+        String normalizedTerm = normalizeString(term);
         Set<String> pagesWithTerm = new HashSet<>();
 
         // Search in content
-        Set<String> contentPages = invertedIndex.get(term);
+        Set<String> contentPages = invertedIndex.get(normalizedTerm);
         if (contentPages != null) {
             pagesWithTerm.addAll(contentPages);
         }
 
         // Search in titles
+        System.out.println("Searching for term in titles: " + term);
         for (PageInfo pageInfo : pageInfoMap.values()) {
-            if (pageInfo.getTitle().toLowerCase().contains(term)) {
+            if (normalizeString(pageInfo.getTitle()).contains(normalizedTerm)) {
+                System.out.println("Found in title: " + pageInfo.getUrl());
                 pagesWithTerm.add(pageInfo.getUrl());
             }
         }
@@ -123,9 +138,19 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
 
     private void processPacket(DatagramPacket packet) {
         try {
-            ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData());
-            ObjectInputStream ois = new ObjectInputStream(byteStream);
+
+            // Use GZIPInputStream for decompression
+            ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData(), 0, packet.getLength());
+            GZIPInputStream gzipInputStream = new GZIPInputStream(byteStream);
+            ObjectInputStream ois = new ObjectInputStream(gzipInputStream);
+            
             PageInfo pageInfo = (PageInfo) ois.readObject();
+            pageInfoMap.put(pageInfo.getUrl(), pageInfo);
+            updateInvertedIndex(pageInfo);
+            printPageInfo(pageInfo);
+
+
+            
 
             pageInfoMap.put(pageInfo.getUrl(), pageInfo);
             updateInvertedIndex(pageInfo);
@@ -152,8 +177,8 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
         System.out.println("URL: " + pageInfo.getUrl());
         System.out.println("Title: " + pageInfo.getTitle());
         System.out.println("Snippet: " + pageInfo.getSnippet());
-        System.out.println("Words: " + pageInfo.getUniqueWords());
-        pageInfo.showWordCount();
+        //System.out.println("Words: " + pageInfo.getUniqueWords());
+        //pageInfo.showWordCount();
     }
 
     private void printInvertedIndex() {
