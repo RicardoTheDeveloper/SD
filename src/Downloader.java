@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -20,6 +21,7 @@ import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+import java.text.Normalizer;
 
 public class Downloader implements Runnable {
 
@@ -86,33 +88,53 @@ public class Downloader implements Runnable {
 
     public void handleIndexCommand(GatewayInterface gateway) {
         try {
-            String url = gateway.fetchNextUrl();
-            if (url != null && !url.isEmpty()) {
-                Document doc = Jsoup.connect(url).get();
+            String currentUrl = gateway.fetchNextUrl();
+            if (currentUrl != null && !currentUrl.isEmpty()) {
+                Document doc = Jsoup.connect(currentUrl).get();
                 String title = doc.title();
-                String snippet = extractSnippet(doc); // Extract first paragraph as snippet
-                
+                String snippet = extractSnippet(doc);
+    
                 Set<String> uniqueWords = new HashSet<>();
-                Map<String, Integer> wordCount = new HashMap<>(); // Map to count word occurrences
-
+                Map<String, Integer> wordCount = new HashMap<>();
+    
                 doc.body().select("p").forEach(p -> {
                     for (String word : p.text().split("\\s+")) {
-                        // Remove specific punctuation marks while keeping letters and digits
                         String cleanedWord = word.replaceAll("[.,;:?!\"]+", "").toLowerCase();
                         if (!cleanedWord.isEmpty()) {
-                            uniqueWords.add(cleanedWord);
-                            wordCount.put(cleanedWord, wordCount.getOrDefault(cleanedWord, 0) + 1);
+                            uniqueWords.add(cleanedWord); // Add original word
+                            String normalizedWord = normalizeString(cleanedWord);
+                            if (!normalizedWord.equals(cleanedWord)) {
+                                uniqueWords.add(normalizedWord); // Add normalized word, if different
+                            }
                         }
                     }
                 });
-
-                PageInfo pageInfo = new PageInfo(url, title, snippet, uniqueWords, wordCount);
+    
+                // Extract and send URLs found in the document
+                Elements links = doc.select("a[href]");
+                for (Element link : links) {
+                    String foundUrl = link.absUrl("href");
+                    if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
+                        //gateway.addUrlToQueue(foundUrl);
+                    }
+                }
+    
+                PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords, wordCount);
                 sendMulticastMessage(pageInfo);
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+    
+    private String normalizeString(String input) {
+        String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);
+        Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
+        return pattern.matcher(normalized).replaceAll("");
+    }
+    
+
+    
 
     
     

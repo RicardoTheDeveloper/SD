@@ -7,12 +7,15 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
+import java.util.function.IntPredicate;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.text.Normalizer;
@@ -130,6 +133,32 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
 
     return count == 0 ? "No results found for the given terms." : resultBuilder.toString();
 }
+
+
+    private String formatSearchResults(Set<String> resultPages, IntPredicate newGroupCondition) {
+        if (resultPages.isEmpty()) {
+            return "No results found for the given terms.";
+        }
+
+        int count = 0;
+        StringBuilder resultBuilder = new StringBuilder();
+        for (String url : resultPages) {
+            PageInfo pageInfo = fetchPageInfo(url);
+            if (pageInfo != null) {
+                resultBuilder.append("Title: ").append(pageInfo.getTitle())
+                            .append("\nURL: ").append(pageInfo.getUrl())
+                            .append("\nSnippet: ").append(pageInfo.getSnippet())
+                            .append("\n---------------------------------------\n");
+
+                if (newGroupCondition.test(count)) {
+                    resultBuilder.append("\n-- Next group of results --\n\n");
+                }
+                count++;
+            }
+        }
+        return resultBuilder.toString();
+    }
+
 
 
     public PageInfo fetchPageInfo(String url) {

@@ -14,6 +14,7 @@ public interface GatewayInterface extends Remote {
     String remoteCheckInvertedIndex() throws RemoteException;
     public void waitForUrl() throws InterruptedException, RemoteException;
     public void notifyDownloader() throws RemoteException;
+    void addUrlToQueue(String url) throws RemoteException;
     
     
 }

@@ -1,5 +1,12 @@
 package src;
 
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -10,11 +17,19 @@ public class RMIClient {
 
     public static void main(String[] args) {
         try {
+            System.out.println("Default Charset=" + Charset.defaultCharset());
+            System.setProperty("file.encoding", "UTF-8");
+            System.out.println("file.encoding=" + System.getProperty("file.encoding"));
+            System.out.println("Default Charset=" + Charset.defaultCharset());
+            System.out.println("Default Charset in Use=" + new OutputStreamWriter(new ByteArrayOutputStream()).getEncoding());
             // Creating the registry
             Registry registry = LocateRegistry.getRegistry();
             GatewayInterface stub = (GatewayInterface) registry.lookup("GatewayService");
 
-            Scanner scanner = new Scanner(System.in);
+            Scanner scanner = new Scanner(System.in, "windows-1252"); 
+
+            System.out.println("TESTE: NÃO, FAMÍLIA, PORTUGUÊS");
+
             while (true) {
                 // Display the options menu
                 System.out.println("Choose an action:");
@@ -75,17 +90,19 @@ public class RMIClient {
     }
 
 
-    private static void handleIndexNewURL(Scanner scanner, GatewayInterface stub) {
+    
+private static void handleIndexNewURL(Scanner scanner, GatewayInterface stub) throws IOException {
     try {
         System.out.println("Enter a URL to be indexed:");
-        String url = scanner.nextLine();
+        String url = scanner.nextLine(); // Reading the URL
         stub.remoteSubmitURL(url);
         System.out.println("URL submitted for indexing: " + url);
     } catch (RemoteException e) {
         System.err.println("Remote exception when trying to submit URL for indexing.");
         e.printStackTrace();
-    }
+    } 
 }
+
 
 private static void handleCheckingInvertedIndex(GatewayInterface stub){
     try{
@@ -105,17 +122,20 @@ private static void handleCheckingInvertedIndex(GatewayInterface stub){
 private static void handleSearchWithSpecificTerms(Scanner scanner, GatewayInterface stub) {
     try {
         System.out.print("Enter search terms (separated by spaces): ");
-        String searchQuery = scanner.nextLine();
-        String[] terms = searchQuery.split("\\s+");
-
-        // Calling the search method in the Gateway
-        String searchResults = stub.remoteSearchForTerms(terms);
-        System.out.println("Search Results: \n" + searchResults);
+            String searchQuery = scanner.nextLine();
+            String[] terms = searchQuery.split("\\s+");
+            System.out.println("Term sent for search");
+            for (String term : terms) {
+                System.out.println("Term: " + term);
+            }
+            String searchResults = stub.remoteSearchForTerms(terms);
+            System.out.println("Search Results: \n" + searchResults);
     } catch (RemoteException e) {
         System.err.println("Error processing search request.");
         e.printStackTrace();
     }
 }
+
 
 
 }

@@ -92,6 +92,24 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         return "print_index";
     }
 
+
+    @Override
+    public synchronized void addUrlToQueue(String url) throws RemoteException {
+        if (!urlQueue.contains(url)) {
+            boolean isAdded = urlQueue.offer(url);
+            if (isAdded) {
+                notifyDownloader(); // Notify downloader threads
+                System.out.println("URL added to queue: " + url);
+            } else {
+                // Debug print in case of failure
+                System.err.println("Failed to add URL to queue: " + url);
+            }
+        } else {
+            // Debug print if the URL is already in the queue
+            System.out.println("URL already in queue, skipping: " + url);
+        }
+    }
+
    
 
 
