@@ -117,7 +117,7 @@ public class Downloader implements Runnable {
                     String foundUrl = link.absUrl("href");
                     if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
                         outboundLinks.add(foundUrl);
-                        //gateway.addUrlToQueue(foundUrl);
+                        gateway.addUrlToQueue(foundUrl);
                     }
                 }
     

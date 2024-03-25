@@ -8,9 +8,12 @@ import java.rmi.server.UnicastRemoteObject;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -18,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.IntPredicate;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 import java.text.Normalizer;
 import java.util.regex.Pattern;
@@ -70,96 +74,75 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     @Override
 public String searchPagesWithTerms(String[] terms) throws RemoteException {
     System.out.println("Entered searchPagesWithTerms");
-    Set<String> resultPages = new HashSet<>();
+    Map<PageInfo, Integer> pageInfoInboundLinkCountMap = new HashMap<>();
+    
+    Set<String> pagesWithAllTerms = new HashSet<>();
     boolean isFirstTerm = true;
-    StringBuilder resultBuilder = new StringBuilder();
-
+    
+    // Find pages that contain all terms
     for (String term : terms) {
         String normalizedTerm = normalizeString(term);
-        Set<String> pagesWithTerm = new HashSet<>();
-
-        // Search in content
-        Set<String> contentPages = invertedIndex.get(normalizedTerm);
-        if (contentPages != null) {
-            pagesWithTerm.addAll(contentPages);
+        Set<String> pagesWithTerm = invertedIndex.get(normalizedTerm);
+        if (pagesWithTerm == null || pagesWithTerm.isEmpty()) {
+            return "No results found for the given terms.";
         }
-
-        // Search in titles
-        System.out.println("Searching for term in titles: " + term);
-        for (PageInfo pageInfo : pageInfoMap.values()) {
-            if (normalizeString(pageInfo.getTitle()).contains(normalizedTerm)) {
-                System.out.println("Found in title: " + pageInfo.getUrl());
-                pagesWithTerm.add(pageInfo.getUrl());
-            }
-        }
-
-        // Combine results
         if (isFirstTerm) {
-            resultPages.addAll(pagesWithTerm);
+            pagesWithAllTerms.addAll(pagesWithTerm);
             isFirstTerm = false;
         } else {
-            resultPages.retainAll(pagesWithTerm);
+            pagesWithAllTerms.retainAll(pagesWithTerm); // Intersection of sets
         }
     }
-
-    // Handling no results case
-    if (resultPages.isEmpty() && !isFirstTerm) {
-        for (String term : terms) {
-            term = term.toLowerCase();
-            Set<String> contentPages = invertedIndex.get(term);
-            if (contentPages != null) {
-                resultPages.addAll(contentPages);
-            }
-            for (PageInfo pageInfo : pageInfoMap.values()) {
-                if (pageInfo.getTitle().toLowerCase().contains(term)) {
-                    resultPages.add(pageInfo.getUrl());
-                }
-            }
-        }
+    
+    // Count inbound links for these pages
+    for (String url : pagesWithAllTerms) {
+        PageInfo pageInfo = pageInfoMap.get(url);
+        int inboundLinksCount = inboundLinks.getOrDefault(url, Collections.emptySet()).size();
+        pageInfoInboundLinkCountMap.put(pageInfo, inboundLinksCount);
     }
+    
+   // Prepare a list of PageInfo from the set of URLs
+    List<PageInfo> pageInfoList = pagesWithAllTerms.stream()
+        .map(url -> pageInfoMap.get(url))
+        .filter(Objects::nonNull)
+        .collect(Collectors.toList());
 
-    // Formatting the results
-    int count = 0;
-    for (String url : resultPages) {
-        PageInfo pageInfo = fetchPageInfo(url);
+    // Sort PageInfo objects based on the number of inbound links in descending order
+    pageInfoList.sort((page1, page2) -> Integer.compare(page2.getInboundLinks().size(), page1.getInboundLinks().size()));
 
+    // Format the search results
+    StringBuilder resultBuilder = new StringBuilder();
+    final int resultsPerGroup = 10;
+    int groupNumber = 1;
+    int currentGroupIndex = 0;
+
+    for (PageInfo pageInfo : pageInfoList) {
+        if (currentGroupIndex % resultsPerGroup == 0) {
+            if (currentGroupIndex > 0) {
+                resultBuilder.append("\n-- End of Group ").append(groupNumber - 1).append(" --\n\n");
+            }
+            resultBuilder.append("-- Group ").append(groupNumber).append(" --\n");
+            groupNumber++;
+        }
         resultBuilder.append("Title: ").append(pageInfo.getTitle())
                      .append("\nURL: ").append(pageInfo.getUrl())
                      .append("\nSnippet: ").append(pageInfo.getSnippet())
+                     .append("\nInbound Links: ").append(pageInfo.getInboundLinks().size())
                      .append("\n---------------------------------------\n");
-
-        if (++count % 10 == 0 && count < resultPages.size()) {
-            resultBuilder.append("\n-- Next group of results --\n\n");
-        }
+        currentGroupIndex++;
     }
 
-    return count == 0 ? "No results found for the given terms." : resultBuilder.toString();
+    if (currentGroupIndex % resultsPerGroup != 0) { // Close the last group if it contains results
+        resultBuilder.append("\n-- End of Group ").append(groupNumber - 1).append(" --\n");
+    }
+
+    return resultBuilder.toString();
 }
 
 
-    private String formatSearchResults(Set<String> resultPages, IntPredicate newGroupCondition) {
-        if (resultPages.isEmpty()) {
-            return "No results found for the given terms.";
-        }
 
-        int count = 0;
-        StringBuilder resultBuilder = new StringBuilder();
-        for (String url : resultPages) {
-            PageInfo pageInfo = fetchPageInfo(url);
-            if (pageInfo != null) {
-                resultBuilder.append("Title: ").append(pageInfo.getTitle())
-                            .append("\nURL: ").append(pageInfo.getUrl())
-                            .append("\nSnippet: ").append(pageInfo.getSnippet())
-                            .append("\n---------------------------------------\n");
 
-                if (newGroupCondition.test(count)) {
-                    resultBuilder.append("\n-- Next group of results --\n\n");
-                }
-                count++;
-            }
-        }
-        return resultBuilder.toString();
-    }
+    
 
 
 
