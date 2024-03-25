@@ -4,14 +4,11 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
@@ -21,17 +18,23 @@ import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+import java.nio.ByteBuffer;
 import java.text.Normalizer;
 
 public class Downloader implements Runnable {
 
     private static final AtomicInteger sharedCounter = new AtomicInteger(0);
     private final int threadId;
-    private static int totalThreads = 5; // This should be set to the total number of downloader threads 
-
-    private String multicastAddress = "224.3.2.1"; // multicast address
-    private int port = 4321; // multicast port
+    private static int totalThreads = 5;
+    private String multicastAddress = "224.3.2.1";
+    private int port = 4321;
     private GatewayInterface gateway;
+    private static final int MAX_UDP_PACKET_SIZE = 65507;
+
+    private final Map<String, Map<Integer, Long>> sentChunks = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private final Map<String, byte[][]> originalDataChunks = new ConcurrentHashMap<>();
+
 
     public Downloader(GatewayInterface gateway, int threadId){
         this.gateway = gateway;
@@ -78,6 +81,18 @@ public class Downloader implements Runnable {
     }
     
 
+    
+    
+    
+
+
+
+    
+
+    
+    
+    
+
     private String extractSnippet(Document doc) {
         Element firstParagraph = doc.selectFirst("p");
         return firstParagraph != null ? firstParagraph.text() : "";
@@ -93,39 +108,47 @@ public class Downloader implements Runnable {
                 Document doc = Jsoup.connect(currentUrl).get();
                 String title = doc.title();
                 String snippet = extractSnippet(doc);
-    
+                Set<String> outboundLinks = new HashSet<>();
                 Set<String> uniqueWords = new HashSet<>();
-                Map<String, Integer> wordCount = new HashMap<>();
     
-                doc.body().select("p").forEach(p -> {
-                    for (String word : p.text().split("\\s+")) {
-                        String cleanedWord = word.replaceAll("[.,;:?!\"]+", "").toLowerCase();
-                        if (!cleanedWord.isEmpty()) {
-                            uniqueWords.add(cleanedWord); // Add original word
-                            String normalizedWord = normalizeString(cleanedWord);
-                            if (!normalizedWord.equals(cleanedWord)) {
-                                uniqueWords.add(normalizedWord); // Add normalized word, if different
-                            }
-                        }
-                    }
-                });
-    
-                // Extract and send URLs found in the document
+                // Extract outbound links
                 Elements links = doc.select("a[href]");
                 for (Element link : links) {
                     String foundUrl = link.absUrl("href");
                     if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
+                        outboundLinks.add(foundUrl);
                         //gateway.addUrlToQueue(foundUrl);
                     }
                 }
     
-                PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords, wordCount);
+                // Extract unique words
+                Elements paragraphs = doc.select("p");
+                for (Element paragraph : paragraphs) {
+                    String[] words = paragraph.text().split("\\s+");
+                    for (String word : words) {
+                        word = word.toLowerCase().replaceAll("[^a-z]", "");
+                        if (!word.isEmpty()) {
+                            uniqueWords.add(word);
+                        }
+                    }
+                }
+    
+                // Create PageInfo with only necessary information
+                PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords);
+                pageInfo.setOutboundLinks(outboundLinks);
                 sendMulticastMessage(pageInfo);
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+    
+    
+
+    
+    
+
+    
     
     private String normalizeString(String input) {
         String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);

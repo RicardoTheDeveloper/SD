@@ -8,21 +8,27 @@ import java.util.HashSet;
 import java.util.Map;
 
 public class PageInfo implements Serializable{
+
+    private static final long serialVersionUID = 1L; // Recommended for Serializable classes
+
+
     private String url;
     private String title;
     private String snippet;
-    private Set<String> uniqueWords = new HashSet<>(); 
-    private Map<String, Integer> wordCount = new HashMap<>(); // New field to store word counts
+    private Set<String> uniqueWords;
+  
+    private Set<String> outboundLinks = new HashSet<>(); // URLs found on the page
+    private Set<String> inboundLinks = new HashSet<>(); // URLs of other pages that link to this page
 
     
 
-    public PageInfo(String url, String title, String snippet,Set<String> uniqueWords,Map<String,Integer> WordCount)  {
+    public PageInfo(String url, String title, String snippet, Set<String> uniqueWords) {
         this.url = url;
         this.title = title;
         this.snippet = snippet;
-        this.uniqueWords = uniqueWords;
-        this.wordCount = WordCount;
-        
+        this.uniqueWords = uniqueWords != null ? uniqueWords : new HashSet<>();
+        this.outboundLinks = new HashSet<>();
+        this.inboundLinks = new HashSet<>();
     }
 
     // Getters
@@ -59,20 +65,38 @@ public class PageInfo implements Serializable{
         this.uniqueWords = uniqueWords;
     }
 
-    public void updateWordCount(String word, int count) {
-        wordCount.put(word, count);
+    
+
+    public void setOutboundLinks(Set<String> outboundLinks) {
+        this.outboundLinks = outboundLinks;
     }
 
-    public int getWordCount(String word) {
-        return wordCount.getOrDefault(word, 0);
+    public Set<String> getOutboundLinks() {
+        return outboundLinks;
     }
 
-    public void showWordCount() {
-        System.out.println("Word Count:");
-        for (Map.Entry<String, Integer> entry : wordCount.entrySet()) {
-            System.out.println(entry.getKey() + ": " + entry.getValue());
-        }
+    // Setter and Getter for inboundLinks
+    public void setInboundLinks(Set<String> inboundLinks) {
+        this.inboundLinks = inboundLinks;
     }
+
+    public Set<String> getInboundLinks() {
+        return inboundLinks;
+    }
+
+    // Add a single inbound link
+    public void addInboundLink(String link) {
+        this.inboundLinks.add(link);
+    }
+
+    // Add multiple inbound links
+    public void addInboundLinks(Set<String> links) {
+        this.inboundLinks.addAll(links);
+    }
+
+    
+
+    
 
     @Override
     public boolean equals(Object o) {
@@ -85,5 +109,18 @@ public class PageInfo implements Serializable{
     @Override
     public int hashCode() {
         return Objects.hash(url);
+    }
+
+
+    @Override
+    public String toString() {
+        return "PageInfo{" +
+                "url='" + url + '\'' +
+                ", title='" + title + '\'' +
+                ", outBoundLinks='" + outboundLinks + '\'' +
+                
+                
+                ", inboundLinks=" + inboundLinks +
+                '}';
     }
 }

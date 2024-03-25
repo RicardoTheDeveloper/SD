@@ -8,6 +8,7 @@ import java.rmi.server.UnicastRemoteObject;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -30,6 +31,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     private ConcurrentHashMap<String, PageInfo> pageInfoMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, Set<String>> invertedIndex = new ConcurrentHashMap<>();
     private ExecutorService executorService;
+    private ConcurrentHashMap<String, Set<String>> inboundLinks = new ConcurrentHashMap<>();
 
     public IndexStorageBarrel(String multicastAddress, int port) throws IOException {
         this.port = port;
@@ -167,31 +169,39 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
 
     private void processPacket(DatagramPacket packet) {
         try {
-
-            // Use GZIPInputStream for decompression
             ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData(), 0, packet.getLength());
             GZIPInputStream gzipInputStream = new GZIPInputStream(byteStream);
             ObjectInputStream ois = new ObjectInputStream(gzipInputStream);
             
             PageInfo pageInfo = (PageInfo) ois.readObject();
-            pageInfoMap.put(pageInfo.getUrl(), pageInfo);
-            updateInvertedIndex(pageInfo);
-            printPageInfo(pageInfo);
-
-
             
-
+            // Iterate through existing PageInfo objects to find inbound links
+            for (PageInfo existingPageInfo : pageInfoMap.values()) {
+                if (existingPageInfo.getOutboundLinks().contains(pageInfo.getUrl())) {
+                    // If the existing PageInfo links to the current one, add it to the inbound links
+                    pageInfo.addInboundLink(existingPageInfo.getUrl());
+                }
+            }
+    
+            // Update pageInfoMap with the new PageInfo
             pageInfoMap.put(pageInfo.getUrl(), pageInfo);
+    
+            // Update inverted index
             updateInvertedIndex(pageInfo);
-            printPageInfo(pageInfo);
+    
+            // Print for debugging
+            System.out.println("Processed PageInfo: " + pageInfo.getUrl());
+            System.out.println("Inbound Links: " + pageInfo.getInboundLinks());
             
-            printInvertedIndex();
-
-            savePageInfoToFile(pageInfo); // Save to file
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         }
     }
+    
+    
+    
+
+    
 
 
     private void updateInvertedIndex(PageInfo pageInfo) {
@@ -201,14 +211,7 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
         });
     }
 
-    private void printPageInfo(PageInfo pageInfo) {
-        System.out.println("Received PageInfo:");
-        System.out.println("URL: " + pageInfo.getUrl());
-        System.out.println("Title: " + pageInfo.getTitle());
-        System.out.println("Snippet: " + pageInfo.getSnippet());
-        //System.out.println("Words: " + pageInfo.getUniqueWords());
-        //pageInfo.showWordCount();
-    }
+    
 
     private void printInvertedIndex() {
         System.out.println("PRINTING INVERTED INDEX");
