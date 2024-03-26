@@ -140,6 +140,24 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
 }
 
 
+@Override
+public String getInboundLinks(String url) throws RemoteException {
+    PageInfo pageInfo = pageInfoMap.get(url);
+    if (pageInfo == null) {
+        return "No page found with URL: " + url;
+    }
+    Set<String> inboundLinks = pageInfo.getInboundLinks();
+    if (inboundLinks.isEmpty()) {
+        return "No inbound links found for URL: " + url;
+    }
+    StringBuilder linksResult = new StringBuilder("Inbound links for " + url + ":\n");
+    for (String link : inboundLinks) {
+        linksResult.append(link).append("\n");
+    }
+    return linksResult.toString();
+}
+
+
 
 
     

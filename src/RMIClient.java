@@ -64,7 +64,7 @@ public class RMIClient {
                         break;
                     case 5:
                         // Handle checking pages linking to a specific page
-                        System.out.println("Link checking functionality is not yet implemented.");
+                        handleCheckPagesLinkingTo(scanner, stub);
                         break;
                     case 6:
                         // Handle real-time system status
@@ -132,6 +132,20 @@ private static void handleSearchWithSpecificTerms(Scanner scanner, GatewayInterf
             System.out.println("Search Results: \n" + searchResults);
     } catch (RemoteException e) {
         System.err.println("Error processing search request.");
+        e.printStackTrace();
+    }
+}
+
+
+
+private static void handleCheckPagesLinkingTo(Scanner scanner, GatewayInterface stub) {
+    try {
+        System.out.print("Enter the URL to check for inbound links: ");
+        String url = scanner.nextLine(); // Read the URL from the user
+        String inboundLinks = stub.remoteGetLinksToPointingTo(url); // Call the method to get inbound links
+        System.out.println("Inbound links for " + url + ": \n" + inboundLinks);
+    } catch (RemoteException e) {
+        System.err.println("Remote exception when trying to get inbound links.");
         e.printStackTrace();
     }
 }

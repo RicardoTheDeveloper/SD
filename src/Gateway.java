@@ -72,11 +72,17 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     @Override
     public String remoteGetLinksToPointingTo(String url) throws RemoteException {
-        // Logic to get links pointing to a specific URL
-        System.out.println("Getting links pointing to: " + url);
-        // Placeholder for actual links
-        return "Links pointing to the URL.";
+        try {
+            Registry registry = LocateRegistry.getRegistry("localhost", 1100);
+            IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup("IndexStorageBarrelService");
+            return barrelStub.getInboundLinks(url);
+        } catch (Exception e) {
+            System.err.println("Gateway exception when fetching inbound links: " + e.toString());
+            e.printStackTrace();
+            return "Failed to retrieve inbound links for URL: " + url;
+        }
     }
+
 
     @Override
     public String remoteGetRealTimeSystemStatus() throws RemoteException {
