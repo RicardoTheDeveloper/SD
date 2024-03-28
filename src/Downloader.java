@@ -10,6 +10,7 @@ import java.rmi.registry.Registry;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -102,46 +103,60 @@ public class Downloader implements Runnable {
 
 
     public void handleIndexCommand(GatewayInterface gateway) {
-        try {
-            String currentUrl = gateway.fetchNextUrl();
-            if (currentUrl != null && !currentUrl.isEmpty()) {
-                Document doc = Jsoup.connect(currentUrl).get();
-                String title = doc.title();
-                String snippet = extractSnippet(doc);
-                Set<String> outboundLinks = new HashSet<>();
-                Set<String> uniqueWords = new HashSet<>();
-    
-                // Extract outbound links
-                Elements links = doc.select("a[href]");
-                for (Element link : links) {
-                    String foundUrl = link.absUrl("href");
-                    if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
-                        outboundLinks.add(foundUrl);
-                        //gateway.addUrlToQueue(foundUrl);
-                    }
+    try {
+        System.out.println("UPDATE 15:20");
+        String currentUrl = gateway.fetchNextUrl();
+        if (currentUrl != null && !currentUrl.isEmpty()) {
+            Document doc = Jsoup.connect(currentUrl).get();
+            String title = doc.title();
+            String snippet = extractSnippet(doc);
+            Set<String> outboundLinks = new HashSet<>();
+            Set<String> uniqueWords = new HashSet<>();
+
+            // Function to add normalized words to the set
+            Consumer<String> addWord = word -> {
+                word = word.toLowerCase().replaceAll("[^a-z]", "");
+                if (!word.isEmpty() && !word.equals("www") && !word.equals("com")) {
+                    uniqueWords.add(word);
                 }
-    
-                // Extract unique words
-                Elements paragraphs = doc.select("p");
-                for (Element paragraph : paragraphs) {
-                    String[] words = paragraph.text().split("\\s+");
-                    for (String word : words) {
-                        word = word.toLowerCase().replaceAll("[^a-z]", "");
-                        if (!word.isEmpty()) {
-                            uniqueWords.add(word);
-                        }
-                    }
-                }
-    
-                // Create PageInfo with only necessary information
-                PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords);
-                pageInfo.setOutboundLinks(outboundLinks);
-                sendMulticastMessage(pageInfo);
+            };
+
+            // Extract unique words from the title
+            String[] titleWords = title.split("[\\s+.]+"); // Split by whitespace and periods
+            for (String word : titleWords) {
+                addWord.accept(word);
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+
+            // Extract outbound links
+            Elements links = doc.select("a[href]");
+            for (Element link : links) {
+                String foundUrl = link.absUrl("href");
+                if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
+                    outboundLinks.add(foundUrl);
+                    //gateway.addUrlToQueue(foundUrl);
+                }
+            }
+
+            // Extract unique words from paragraphs
+            Elements paragraphs = doc.select("p");
+            for (Element paragraph : paragraphs) {
+                String[] words = paragraph.text().split("\\s+");
+                for (String word : words) {
+                    addWord.accept(word);
+                }
+            }
+
+            // Create PageInfo with only necessary information
+            PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords);
+            pageInfo.setOutboundLinks(outboundLinks);
+            sendMulticastMessage(pageInfo);
         }
+    } catch (IOException e) {
+        e.printStackTrace();
     }
+}
+
+    
     
     
 

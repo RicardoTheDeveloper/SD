@@ -77,7 +77,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     @Override
 public String searchPagesWithTerms(String[] terms) throws RemoteException {
-    long startTime = System.nanoTime();
+    
 
 
     System.out.println("Entered searchPagesWithTerms");
@@ -86,6 +86,7 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
     Set<String> pagesWithAllTerms = new HashSet<>();
     boolean isFirstTerm = true;
     
+    long startTime = System.nanoTime();
     // Find pages that contain all terms
     for (String term : terms) {
         String normalizedTerm = normalizeString(term);
@@ -117,6 +118,10 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
     // Sort PageInfo objects based on the number of inbound links in descending order
     pageInfoList.sort((page1, page2) -> Integer.compare(page2.getInboundLinks().size(), page1.getInboundLinks().size()));
 
+
+    long searchTime = System.nanoTime() - startTime;
+    responseTimes.add(searchTime); // Add the response time to the list
+
     // Format the search results
     StringBuilder resultBuilder = new StringBuilder();
     final int resultsPerGroup = 10;
@@ -143,8 +148,7 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
         resultBuilder.append("\n-- End of Group ").append(groupNumber - 1).append(" --\n");
     }
 
-    long searchTime = System.nanoTime() - startTime;
-    responseTimes.add(searchTime); // Add the response time to the list
+    
     
     // Record each search term frequency
     for (String term : terms) {
@@ -181,9 +185,9 @@ public Map<String, Integer> getSearchFrequencies() throws RemoteException {
 public double getAverageResponseTime() throws RemoteException {
     synchronized (responseTimes) {
         return responseTimes.stream()
-                .mapToDouble(Double::doubleValue)
+                .mapToDouble(Long::doubleValue)
                 .average()
-                .orElse(0.0);
+                .orElse(0.0) / 1e8; // Convert nanoseconds to tenths of a second
     }
 }
 

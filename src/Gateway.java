@@ -166,6 +166,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     @Override
     public String getSystemStatus() throws RemoteException {
+        System.out.println("|UPDATE 15:05|");
         StringBuilder statusBuilder = new StringBuilder();
 
         statusBuilder.append("Top Searches Across All Barrels:\n");
@@ -193,7 +194,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
             if (isActive) {
                 double averageTime = barrel.stub.getAverageResponseTime();
                 statusBuilder.append("Barrel ").append(barrel.id)
-                    .append(": ").append(String.format("%.1f", averageTime * 10))
+                    .append(": ").append(String.format("%.1f", averageTime))
                     .append("\n");
             }
         }
