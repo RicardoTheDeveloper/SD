@@ -4,17 +4,44 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     private ConcurrentLinkedQueue<String> urlQueue; // Queue de URLs
+    
+    private List<BarrelData> barrels; // List of barrel stubs with their IDs
+
+    private int nextBarrelIndex = 0; // Index for round-robin
+    private final Map<String, Integer> searchFrequencies = new ConcurrentHashMap<>();
+    // Fields to keep track of barrels and their response times
+    private final Map<String, Boolean> barrelStatus = new ConcurrentHashMap<>();
+    private final Map<String, List<Double>> barrelResponseTimes = new ConcurrentHashMap<>();
+
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     protected Gateway() throws RemoteException {
         super();
         urlQueue = new ConcurrentLinkedQueue<>();
+        barrels = new ArrayList<>();
+        discoverBarrels(1100, 1200); // Check ports 1100 to 1200 for barrels
+        startPeriodicDiscovery();
+        
     }
+
+    
+    
+    
 
     @Override
     public synchronized void remoteSubmitURL(String url) throws RemoteException {
@@ -51,24 +78,45 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     @Override
     public String remoteSearchForTerms(String[] terms) throws RemoteException {
         try {
-            Registry registry = LocateRegistry.getRegistry("localhost", 1100);
-            IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup("IndexStorageBarrelService");
+            if (terms == null || terms.length == 0) {
+                return "No search terms provided.";
+            }
 
-            return barrelStub.searchPagesWithTerms(terms);
+            System.out.println("|UPDATE| Search terms received: " + Arrays.toString(terms));
+            
+            BarrelData barrelData = getNextBarrel();  // Correctly obtain the next Barrel's data
+            if (barrelData == null) {
+                return "No Index Storage Barrels are available.";
+            }
+            IndexStorageBarrelInterface barrelStub = barrelData.stub;
+
+            /*
+             * 
+             * for (String term : terms) {
+                recordSearch(term);
+            }
+             */
+            
+
+            String result = barrelStub.searchPagesWithTerms(terms);
+
+            
+            //recordBarrelResponseTime(barrelData.id, responseTime);  // Use the Barrel's ID from BarrelData
+
+            return result;
+        } catch (ArrayIndexOutOfBoundsException ex) {
+            ex.printStackTrace();
+            return "Search failed due to an out-of-bounds access.";
         } catch (Exception e) {
             System.err.println("Error in remoteSearchForTerms: " + e.getMessage());
-            return "Search failed.";
+            e.printStackTrace(); // Will provide the full stack trace
+            return "Search failed due to an unexpected error.";
         }
     }
 
 
-    @Override
-    public String remoteSearchForTermsOrdered(String[] terms) throws RemoteException {
-        // Logic for searching terms with ordering
-        System.out.println("Ordered search for terms: " + String.join(", ", terms));
-        // Placeholder for actual ordered search result
-        return "Ordered results for search terms.";
-    }
+
+    
 
     @Override
     public String remoteGetLinksToPointingTo(String url) throws RemoteException {
@@ -116,6 +164,46 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         }
     }
 
+    @Override
+    public String getSystemStatus() throws RemoteException {
+        StringBuilder statusBuilder = new StringBuilder();
+
+        statusBuilder.append("Top Searches Across All Barrels:\n");
+        // Aggregate the top searches across all barrels
+        Map<String, Integer> globalSearchFrequencies = new HashMap<>();
+        for (BarrelData barrel : barrels) {
+            Map<String, Integer> barrelSearchFrequencies = barrel.stub.getSearchFrequencies();
+            // Combine frequencies from this barrel with the global frequencies
+            barrelSearchFrequencies.forEach(
+                (term, frequency) -> globalSearchFrequencies.merge(term, frequency, Integer::sum)
+            );
+        }
+        // Now sort and get the top 10 searches globally
+        List<String> topSearches = globalSearchFrequencies.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .limit(10)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toList());
+        
+        topSearches.forEach(search -> statusBuilder.append(search).append("\n"));
+        
+        statusBuilder.append("\nActive Barrels with Average Response Times (in tenths of a second):\n");
+        for (BarrelData barrel : barrels) {
+            boolean isActive = barrelStatus.getOrDefault(barrel.id, false);
+            if (isActive) {
+                double averageTime = barrel.stub.getAverageResponseTime();
+                statusBuilder.append("Barrel ").append(barrel.id)
+                    .append(": ").append(String.format("%.1f", averageTime * 10))
+                    .append("\n");
+            }
+        }
+        
+        return statusBuilder.toString();
+    }
+
+
+
+
    
 
 
@@ -136,7 +224,90 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     public synchronized void notifyDownloader() {
         notifyAll();
     }
+
+
+    private BarrelData getNextBarrel() {
+        if (barrels.isEmpty()) {
+            System.err.println("No Index Storage Barrels are connected.");
+            return null; // or handle this case as you see fit
+        }
+        BarrelData barrelData = barrels.get(nextBarrelIndex);
+        nextBarrelIndex = (nextBarrelIndex + 1) % barrels.size();
+        return barrelData;
+    }
     
+    
+
+    
+
+
+    // Record a search term
+    public void recordSearch(String searchTerm) {
+        searchFrequencies.merge(searchTerm, 1, Integer::sum);
+    }
+
+    // Method to get the top 10 search terms
+    public List<String> getTopSearches() {
+        // Return a list of the top 10 searches sorted by count
+        return searchFrequencies.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(10)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+    }
+
+    // Update the barrel's status (you'll call this when barrels become active or inactive)
+    public void updateBarrelStatus(String barrelID, boolean isActive) {
+        barrelStatus.put(barrelID, isActive);
+    }
+
+    // Record the response time for a barrel (you'll call this after a search is done)
+    public void recordBarrelResponseTime(String barrelID, double responseTime) {
+        barrelResponseTimes.computeIfAbsent(barrelID, k -> new ArrayList<>()).add(responseTime);
+    }
+
+    // Calculate the average response time for a barrel
+    public double calculateAverageResponseTime(String barrelID) {
+        List<Double> responseTimes = barrelResponseTimes.get(barrelID);
+        return responseTimes.stream().mapToDouble(Double::doubleValue).average().orElse(Double.NaN);
+    }
+
+
+        private void startPeriodicDiscovery() {
+        scheduler.scheduleAtFixedRate(() -> discoverBarrels(1100, 1200), 0, 1, TimeUnit.MINUTES);
+    }
+
+    private void discoverBarrels(int startPort, int endPort) {
+        for (int port = startPort; port <= endPort; port++) {
+            try {
+                Registry registry = LocateRegistry.getRegistry("localhost", port);
+                String[] boundNames = registry.list();
+                for (String name : boundNames) {
+                    if (name.startsWith("IndexStorageBarrelService_")) {
+                        String id = name.substring(name.lastIndexOf('_') + 1);
+                        if (!isAlreadyAdded(id)) {
+                            try {
+                                IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup(name);
+                                barrels.add(new BarrelData(id, barrelStub));
+                                updateBarrelStatus(id, true);
+                                System.out.println("Discovered and connected to barrel with ID: " + id + " on port: " + port);
+                            } catch (Exception e) {
+                                System.err.println("Failed to connect to barrel service: " + name + " on port: " + port);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                //System.out.println("No registry found on port: " + port);
+            }
+        }
+    }
+
+    private boolean isAlreadyAdded(String id) {
+        return barrels.stream().anyMatch(barrel -> barrel.id.equals(id));
+    }
+
+
 
     public static void main(String[] args) {
         try {

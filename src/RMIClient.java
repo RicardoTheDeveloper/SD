@@ -68,7 +68,7 @@ public class RMIClient {
                         break;
                     case 6:
                         // Handle real-time system status
-                        System.out.println("Real-time system status functionality is not yet implemented.");
+                        handleSystemStatus(stub);
                         break;
 
                     case 7:
@@ -146,6 +146,17 @@ private static void handleCheckPagesLinkingTo(Scanner scanner, GatewayInterface 
         System.out.println("Inbound links for " + url + ": \n" + inboundLinks);
     } catch (RemoteException e) {
         System.err.println("Remote exception when trying to get inbound links.");
+        e.printStackTrace();
+    }
+}
+
+
+private static void handleSystemStatus(GatewayInterface stub) {
+    try {
+        String systemStatus = stub.getSystemStatus();
+        System.out.println("System Status: \n" + systemStatus);
+    } catch (RemoteException e) {
+        System.err.println("Remote exception when trying to get system status.");
         e.printStackTrace();
     }
 }

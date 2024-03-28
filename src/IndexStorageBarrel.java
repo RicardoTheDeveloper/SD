@@ -27,6 +27,7 @@ import java.text.Normalizer;
 import java.util.regex.Pattern;
 
 public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStorageBarrelInterface, Runnable {
+    private String id; // New field to store the ID
     private MulticastSocket socket;
     private InetAddress group;
     private int port;
@@ -36,8 +37,11 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     private ConcurrentHashMap<String, Set<String>> invertedIndex = new ConcurrentHashMap<>();
     private ExecutorService executorService;
     private ConcurrentHashMap<String, Set<String>> inboundLinks = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Integer> searchFrequencies = new ConcurrentHashMap<>();
+    private List<Long> responseTimes = Collections.synchronizedList(new ArrayList<>());
 
-    public IndexStorageBarrel(String multicastAddress, int port) throws IOException {
+    public IndexStorageBarrel(String id,String multicastAddress, int port) throws IOException {
+        this.id = id; // Store the provided ID
         this.port = port;
         this.group = InetAddress.getByName(multicastAddress);
         this.socket = new MulticastSocket(this.port);
@@ -73,6 +77,9 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     @Override
 public String searchPagesWithTerms(String[] terms) throws RemoteException {
+    long startTime = System.nanoTime();
+
+
     System.out.println("Entered searchPagesWithTerms");
     Map<PageInfo, Integer> pageInfoInboundLinkCountMap = new HashMap<>();
     
@@ -136,6 +143,14 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
         resultBuilder.append("\n-- End of Group ").append(groupNumber - 1).append(" --\n");
     }
 
+    long searchTime = System.nanoTime() - startTime;
+    responseTimes.add(searchTime); // Add the response time to the list
+    
+    // Record each search term frequency
+    for (String term : terms) {
+        searchFrequencies.merge(term, 1, Integer::sum);
+    }
+
     return resultBuilder.toString();
 }
 
@@ -155,6 +170,21 @@ public String getInboundLinks(String url) throws RemoteException {
         linksResult.append(link).append("\n");
     }
     return linksResult.toString();
+}
+
+@Override
+public Map<String, Integer> getSearchFrequencies() throws RemoteException {
+    return new HashMap<>(searchFrequencies); // Return a copy to avoid concurrent modification exceptions
+}
+
+@Override
+public double getAverageResponseTime() throws RemoteException {
+    synchronized (responseTimes) {
+        return responseTimes.stream()
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0.0);
+    }
 }
 
 
@@ -193,6 +223,7 @@ public String getInboundLinks(String url) throws RemoteException {
             // Print for debugging
             System.out.println("Processed PageInfo: " + pageInfo.getUrl());
             System.out.println("Inbound Links: " + pageInfo.getInboundLinks());
+            System.out.println("Words: "+pageInfo.getUniqueWords());
             
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
@@ -269,25 +300,39 @@ public String getInboundLinks(String url) throws RemoteException {
 
     public static void main(String[] args) {
         try {
-            // Create the IndexStorageBarrel instance
-            IndexStorageBarrel barrel = new IndexStorageBarrel("224.3.2.1", 4321);
+            // Check if the correct number of arguments are provided
+            if (args.length != 4) {
+                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <port> <rmi-registry-port>");
+                return;
+            }
     
-            // The object is already exported in its constructor, so no need to export again
+            // Extract command line arguments
+            String id = args[0];
+            String multicastAddress = args[1];
+            int port = Integer.parseInt(args[2]);
+            int registryPort = Integer.parseInt(args[3]);
     
-            // Register the object with the RMI registry
-            Registry registry = LocateRegistry.createRegistry(1100);
-            registry.rebind("IndexStorageBarrelService", barrel); // Directly pass the barrel object
+            // Output the ID to confirm it's being used
+            System.out.println("Starting Index Storage Barrel with ID: " + id);
+    
+            // Create the IndexStorageBarrel instance with the provided ID, multicast address, and port
+            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port);
+    
+            // Register the object with the RMI registry using the ID in the service name
+            Registry registry = LocateRegistry.createRegistry(registryPort);
+            registry.rebind("IndexStorageBarrelService_" + id, barrel);
     
             // Start the thread for processing incoming multicast packets
             new Thread(barrel).start();
     
-            System.out.println("Index Storage Barrel RMI Service is ready.");
+            System.out.println("Index Storage Barrel RMI Service with ID " + id + " is ready at " +
+                               multicastAddress + ":" + port + " with RMI registry on port " + registryPort);
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid number format for port or registry port.");
         } catch (IOException e) {
             System.out.println("Error starting Index Storage Barrel: " + e.getMessage());
             e.printStackTrace();
         }
     }
     
-
-
 }
