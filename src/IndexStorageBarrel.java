@@ -227,6 +227,7 @@ public double getAverageResponseTime() throws RemoteException {
             // Print for debugging
             System.out.println("Processed PageInfo: " + pageInfo.getUrl());
             System.out.println("Inbound Links: " + pageInfo.getInboundLinks());
+            System.out.println("Outbound Links: "+pageInfo.getOutboundLinks());
             System.out.println("Words: "+pageInfo.getUniqueWords());
             
         } catch (IOException | ClassNotFoundException e) {

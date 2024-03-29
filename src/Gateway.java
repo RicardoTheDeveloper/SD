@@ -121,8 +121,12 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     @Override
     public String remoteGetLinksToPointingTo(String url) throws RemoteException {
         try {
-            Registry registry = LocateRegistry.getRegistry("localhost", 1100);
-            IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup("IndexStorageBarrelService");
+            BarrelData barrelData = getNextBarrel();  // Obtain the next Barrel's data
+            if (barrelData == null) {
+                return "No Index Storage Barrels are available.";
+            }
+            IndexStorageBarrelInterface barrelStub = barrelData.stub;
+
             return barrelStub.getInboundLinks(url);
         } catch (Exception e) {
             System.err.println("Gateway exception when fetching inbound links: " + e.toString());
@@ -130,6 +134,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
             return "Failed to retrieve inbound links for URL: " + url;
         }
     }
+
 
 
     @Override
