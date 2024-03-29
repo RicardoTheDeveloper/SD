@@ -40,6 +40,8 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     private ConcurrentHashMap<String, Integer> searchFrequencies = new ConcurrentHashMap<>();
     private List<Long> responseTimes = Collections.synchronizedList(new ArrayList<>());
 
+    private static final String DATA_FILE = "IndexStorageBarrelData_";
+
     public IndexStorageBarrel(String id,String multicastAddress, int port) throws IOException {
         this.id = id; // Store the provided ID
         this.port = port;
@@ -47,7 +49,85 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         this.socket = new MulticastSocket(this.port);
         this.socket.joinGroup(this.group);
         this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+        loadState(); // Load saved state from file
+        synchronizeData(); // Synchronize data with other barrels
     }
+
+    private void loadState() {
+        File file = new File(DATA_FILE + id + ".dat");
+        if (file.exists()) {
+            try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(file))) {
+                pageInfoMap = (ConcurrentHashMap<String, PageInfo>) in.readObject();
+                invertedIndex = (ConcurrentHashMap<String, Set<String>>) in.readObject();
+
+                
+                
+                
+            } catch (IOException | ClassNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    private void saveState() {
+        try (ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(DATA_FILE + id + ".dat"))) {
+            out.writeObject(pageInfoMap);
+            out.writeObject(invertedIndex);
+            // Add other relevant data structures
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void printLoadedData() {
+        System.out.println("Loaded Data for Barrel ID: " + id);
+        System.out.println("PageInfoMap: ");
+        pageInfoMap.forEach((url, pageInfo) -> System.out.println("URL: " + url + ", PageInfo: " + pageInfo));
+        System.out.println("Inverted Index: ");
+        invertedIndex.forEach((word, urls) -> {
+            System.out.println("Word: " + word + ", URLs: " + urls);
+        });
+    }
+
+
+
+    private void synchronizeData() {
+        for (int port = 1100; port <= 1200; port++) {
+            try {
+                Registry registry = LocateRegistry.getRegistry("localhost", port);
+                String[] boundNames = registry.list();
+                for (String name : boundNames) {
+                    if (name.startsWith("IndexStorageBarrelService_")) {
+                        String otherId = name.substring(name.lastIndexOf('_') + 1);
+                        if (!otherId.equals(this.id)) { // Ensure not to synchronize with self
+                            try {
+                                IndexStorageBarrelInterface otherBarrel = (IndexStorageBarrelInterface) registry.lookup(name);
+                                this.pageInfoMap = otherBarrel.getPageInfoMap();
+                                this.invertedIndex = otherBarrel.getInvertedIndex();
+                                this.saveState(); // Save the copied state
+                                System.out.println("Synchronized data from barrel ID: " + otherId);
+
+                                printLoadedData();
+                                return; // Data synchronized successfully, exit the loop
+                            } catch (Exception e) {
+                                System.err.println("Failed to synchronize data from barrel ID: " + otherId);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error during synchronization process on port: " + port);
+            }
+        }
+        System.err.println("Failed to synchronize data from any barrel.");
+    }
+    
+
+
+    
+    
 
     private String normalizeString(String input) {
     String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);
@@ -155,6 +235,8 @@ public String searchPagesWithTerms(String[] terms) throws RemoteException {
         searchFrequencies.merge(term, 1, Integer::sum);
     }
 
+    saveState();
+
     return resultBuilder.toString();
 }
 
@@ -192,6 +274,19 @@ public double getAverageResponseTime() throws RemoteException {
 }
 
 
+    @Override
+    public ConcurrentHashMap<String, PageInfo> getPageInfoMap() throws RemoteException {
+        // Return a deep copy if necessary to prevent modifications
+        return new ConcurrentHashMap<>(pageInfoMap);
+    }
+
+    @Override
+    public ConcurrentHashMap<String, Set<String>> getInvertedIndex() throws RemoteException {
+        // Return a deep copy if necessary to prevent modifications
+        return new ConcurrentHashMap<>(invertedIndex);
+    }
+
+
 
 
     
@@ -223,6 +318,7 @@ public double getAverageResponseTime() throws RemoteException {
     
             // Update inverted index
             updateInvertedIndex(pageInfo);
+            saveState();
     
             // Print for debugging
             System.out.println("Processed PageInfo: " + pageInfo.getUrl());
@@ -259,14 +355,7 @@ public double getAverageResponseTime() throws RemoteException {
     }
 
 
-    private void savePageInfoToFile(PageInfo pageInfo) {
-        try (FileOutputStream fileOut = new FileOutputStream("pageInfoObjects.dat", true); // Append mode
-             ObjectOutputStream out = new ObjectOutputStream(fileOut)) {
-            out.writeObject(pageInfo);
-        } catch (IOException i) {
-            i.printStackTrace();
-        }
-    }
+    
 
     public void searchAndDisplayResults(String[] searchTerms) {
         Set<String> pagesContainingAllTerms = new HashSet<>();
