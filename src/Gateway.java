@@ -135,6 +135,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         }
     }
 
+    //Tá okay meoo?
+
 
 
     @Override
