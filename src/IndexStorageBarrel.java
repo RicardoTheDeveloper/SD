@@ -18,13 +18,20 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.IntPredicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.zip.GZIPInputStream;
 import java.text.Normalizer;
 import java.util.regex.Pattern;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStorageBarrelInterface, Runnable {
     private String id; // New field to store the ID
@@ -39,6 +46,22 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     private ConcurrentHashMap<String, Set<String>> inboundLinks = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, Integer> searchFrequencies = new ConcurrentHashMap<>();
     private List<Long> responseTimes = Collections.synchronizedList(new ArrayList<>());
+    
+    private Map<String, ByteArrayOutputStream> messageBuffers = new ConcurrentHashMap<>();
+    
+
+    private ConcurrentHashMap<String, ConcurrentHashMap<Integer, Boolean>> chunksReceived = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, ConcurrentHashMap<Integer, byte[]>> messageDataBuffers = new ConcurrentHashMap<>();
+
+  
+    private Map<String, Future<?>> nackTasks = new ConcurrentHashMap<>();
+    private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
+    
+
+
+    
+    
 
     private static final String DATA_FILE = "IndexStorageBarrelData_";
 
@@ -297,39 +320,162 @@ public double getAverageResponseTime() throws RemoteException {
         return pageInfoMap.get(url);
     }
 
-    private void processPacket(DatagramPacket packet) {
-        try {
-            ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData(), 0, packet.getLength());
-            GZIPInputStream gzipInputStream = new GZIPInputStream(byteStream);
-            ObjectInputStream ois = new ObjectInputStream(gzipInputStream);
-            
-            PageInfo pageInfo = (PageInfo) ois.readObject();
-            
-            // Iterate through existing PageInfo objects to find inbound links
-            for (PageInfo existingPageInfo : pageInfoMap.values()) {
-                if (existingPageInfo.getOutboundLinks().contains(pageInfo.getUrl())) {
-                    // If the existing PageInfo links to the current one, add it to the inbound links
-                    pageInfo.addInboundLink(existingPageInfo.getUrl());
+    
+
+   private void processPacket(DatagramPacket packet) {
+    try {
+        ByteArrayInputStream byteStream = new ByteArrayInputStream(packet.getData(), 0, packet.getLength());
+        try (ObjectInputStream ois = new ObjectInputStream(byteStream)) {
+            Object obj = ois.readObject();
+            if (obj instanceof MessageChunk) {
+                MessageChunk chunk = (MessageChunk) obj;
+
+                // Decompress chunk data
+                byte[] decompressedData;
+                try (ByteArrayInputStream bais = new ByteArrayInputStream(chunk.getChunkData());
+                     GZIPInputStream gzipInputStream = new GZIPInputStream(bais)) {
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] tempBuffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = gzipInputStream.read(tempBuffer)) != -1) {
+                        buffer.write(tempBuffer, 0, bytesRead);
+                    }
+                    decompressedData = buffer.toByteArray();
                 }
+
+                ConcurrentHashMap<Integer, Boolean> receivedStatus = chunksReceived.computeIfAbsent(chunk.getMessageId(), k -> new ConcurrentHashMap<>());
+                ConcurrentHashMap<Integer, byte[]> dataBuffer = messageDataBuffers.computeIfAbsent(chunk.getMessageId(), k -> new ConcurrentHashMap<>());
+
+                receivedStatus.put(chunk.getIndex(), true);
+                dataBuffer.put(chunk.getIndex(), decompressedData);
+
+                System.out.println("Chunk received: " + chunk.getIndex() + " of " + chunk.getTotalChunks() + " for message " + chunk.getMessageId());
+
+                // Check if this is the first chunk and start the timer
+                if (receivedStatus.size() == 1 && !nackTasks.containsKey(chunk.getMessageId())) {
+                    ScheduledFuture<?> nackTask = scheduler.schedule(() -> {
+                        if (receivedStatus.size() < chunk.getTotalChunks()) {
+                            Set<Integer> missingChunks = new HashSet<>();
+                            for (int i = 0; i < chunk.getTotalChunks(); i++) {
+                                if (!receivedStatus.getOrDefault(i, false)) {
+                                    missingChunks.add(i);
+                                }
+                            }
+                            if (!missingChunks.isEmpty()) {
+                                sendNackMessage(chunk.getMessageId(), missingChunks, chunk.getDownloaderNackPort());
+                            }
+                        }
+                    }, 2, TimeUnit.SECONDS);
+                    nackTasks.put(chunk.getMessageId(), nackTask);
+                }
+
+                synchronized (receivedStatus){
+                    // Verify if all chunks are received
+                if (receivedStatus.size() == chunk.getTotalChunks() && receivedStatus.values().stream().allMatch(Boolean.TRUE::equals)) {
+                    ByteArrayOutputStream completeMessage = new ByteArrayOutputStream();
+
+                    // Ensure chunks are in correct order before writing
+                    for (int i = 0; i < chunk.getTotalChunks(); i++) {
+                        byte[] chunkData = dataBuffer.get(i);
+                        if (chunkData != null) {
+                            completeMessage.write(chunkData);
+                        } else {
+                            System.out.println("Missing chunk data for index " + i);
+                            return; // Exit if data is missing
+                        }
+                    }
+
+                    // Deserialize data to obtain PageInfo object
+                    byte[] completeData = completeMessage.toByteArray();
+                    try (ObjectInputStream oisPageInfo = new ObjectInputStream(new ByteArrayInputStream(completeData))) {
+                        PageInfo pageInfo = (PageInfo) oisPageInfo.readObject();
+                        System.out.println("PageInfo reconstructed: " + pageInfo.getTitle());
+                        
+                        // Iterate through existing PageInfo objects to find inbound links
+                        for (PageInfo existingPageInfo : pageInfoMap.values()) {
+                            if (existingPageInfo.getOutboundLinks().contains(pageInfo.getUrl())) {
+                                // If the existing PageInfo links to the current one, add it to the inbound links
+                                pageInfo.addInboundLink(existingPageInfo.getUrl());
+                            }
+                        }
+                
+                        // Update pageInfoMap with the new PageInfo
+                        pageInfoMap.put(pageInfo.getUrl(), pageInfo);
+                
+                        // Update inverted index
+                        updateInvertedIndex(pageInfo);
+                        saveState();
+
+                        //send termination message
+                        sendTerminationMessage(chunk.getThreadID(),chunk.getDownloaderNackPort());
+                        
+                    }
+
+                    // Clear trackers for this message
+                    receivedStatus.clear();
+                    dataBuffer.clear();
+                    nackTasks.remove(chunk.getMessageId()); // Remove NACK task entry
+                }
+
+                }
+                 
             }
+        }
+    } catch (IOException | ClassNotFoundException e) {
+        e.printStackTrace();
+    }
+}
     
-            // Update pageInfoMap with the new PageInfo
-            pageInfoMap.put(pageInfo.getUrl(), pageInfo);
+
+
+
+    private void sendNackMessage(String messageId, Set<Integer> missingChunks, int downloaderNackPort) {
+    try {
+        InetAddress address = InetAddress.getByName("localhost"); // Adjust as needed for your network setup
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+            oos.writeObject(new NACKMessage(messageId, missingChunks));
+        }
+        byte[] nackData = baos.toByteArray();
+
+        // Use a standard DatagramSocket instead of the multicast socket
+        try (DatagramSocket socket = new DatagramSocket()) {
+            DatagramPacket nackPacket = new DatagramPacket(nackData, nackData.length, address, downloaderNackPort);
+            socket.send(nackPacket);
+            System.out.println("NACK message sent to thread with NACK port: " + downloaderNackPort);
+        }
+    } catch (IOException e) {
+        System.err.println("Error sending NACK message: " + e.getMessage());
+        e.printStackTrace();
+    }
+}
+
+
+    private void sendTerminationMessage(int threadId,int nackPort) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            InetAddress address = InetAddress.getByName("localhost"); // or the appropriate address
+            TerminationMessage terminationMessage = new TerminationMessage(threadId);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ObjectOutputStream oos = new ObjectOutputStream(baos);
+            oos.writeObject(terminationMessage);
+            byte[] data = baos.toByteArray();
     
-            // Update inverted index
-            updateInvertedIndex(pageInfo);
-            saveState();
-    
-            // Print for debugging
-            System.out.println("Processed PageInfo: " + pageInfo.getUrl());
-            System.out.println("Inbound Links: " + pageInfo.getInboundLinks());
-            System.out.println("Outbound Links: "+pageInfo.getOutboundLinks());
-            System.out.println("Words: "+pageInfo.getUniqueWords());
-            
-        } catch (IOException | ClassNotFoundException e) {
+            DatagramPacket packet = new DatagramPacket(data, data.length, address, nackPort);
+            socket.send(packet);
+            System.out.println("TERMINATION MESSAGE SENT TO THREAD WITH nackPort: "+nackPort);
+        } catch (IOException e) {
+            System.err.println("Error sending termination message: " + e.getMessage());
             e.printStackTrace();
         }
     }
+    
+    
+    
+
+    
+    
+
     
     
     

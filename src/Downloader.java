@@ -13,10 +13,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.nio.ByteBuffer;
@@ -31,15 +34,18 @@ public class Downloader implements Runnable {
     private int port = 4321;
     private GatewayInterface gateway;
     private static final int MAX_UDP_PACKET_SIZE = 65507;
+    private int nackPort;
+
 
     private final Map<String, Map<Integer, Long>> sentChunks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final Map<String, byte[][]> originalDataChunks = new ConcurrentHashMap<>();
 
 
-    public Downloader(GatewayInterface gateway, int threadId){
+    public Downloader(GatewayInterface gateway, int threadId, int nackPort) {
         this.gateway = gateway;
         this.threadId = threadId;
+        this.nackPort = nackPort;
     }
 
 
@@ -48,38 +54,146 @@ public class Downloader implements Runnable {
     
 
     // Método para enviar mensagens multicast (UDP!)
-    public void sendMulticastMessage(PageInfo pageInfo) {
-        MulticastSocket socket = null;
-        try {
-            socket = new MulticastSocket(); // Create Socket
-            InetAddress group = InetAddress.getByName(this.multicastAddress);
 
-            // Compress and serialize PageInfo object to byte array
-            ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-            try (GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteStream);
-                 ObjectOutputStream objectOutputStream = new ObjectOutputStream(gzipOutputStream)) {
-                objectOutputStream.writeObject(pageInfo);
+
+public void sendMulticastMessage(PageInfo pageInfo) {
+    try (MulticastSocket socket = new MulticastSocket()) {
+        InetAddress group = InetAddress.getByName(this.multicastAddress);
+
+        // Serialize PageInfo object to byte array (não comprimido ainda)
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+            oos.writeObject(pageInfo);
+        }
+        byte[] pageInfoData = baos.toByteArray();
+
+        // Calcula o número de chunks necessário
+        int chunkSize = MAX_UDP_PACKET_SIZE - 100; // Deixa espaço para o cabeçalho
+        int totalChunks = (pageInfoData.length + chunkSize - 1) / chunkSize;
+        String messageId = "msg-" + System.currentTimeMillis() + "-" + Thread.currentThread().getId();
+
+
+        byte[][] chunks = new byte[totalChunks][];
+        originalDataChunks.put(messageId, chunks);
+
+
+
+        for (int i = 0; i < totalChunks; i++) {
+            int start = i * chunkSize;
+            int length = Math.min(pageInfoData.length - start, chunkSize);
+            byte[] chunkData = Arrays.copyOfRange(pageInfoData, start, start + length);
+
+            // Comprime o chunk data
+            ByteArrayOutputStream compressedBaos = new ByteArrayOutputStream();
+            try (GZIPOutputStream gzipOutputStream = new GZIPOutputStream(compressedBaos)) {
+                gzipOutputStream.write(chunkData);
             }
-            byte[] compressedData = byteStream.toByteArray();
+            byte[] compressedChunkData = compressedBaos.toByteArray();
+            chunks[i] = compressedChunkData; // Store the compressed chunk
 
-            // Check if the size of the compressed data is within the UDP packet size limit
-            if (compressedData.length > 65507) {
-                System.err.println("Compressed data is too large for UDP packet (" + compressedData.length + " bytes)");
-                return; // Skipping sending this packet
+            // Cria o objeto MessageChunk para este chunk
+            MessageChunk chunk = new MessageChunk(i, totalChunks, compressedChunkData, messageId, this.nackPort, this.threadId);
+
+            // Serialize o objeto MessageChunk para enviar
+            ByteArrayOutputStream chunkBaos = new ByteArrayOutputStream();
+            try (ObjectOutputStream chunkOos = new ObjectOutputStream(chunkBaos)) {
+                chunkOos.writeObject(chunk);
             }
+            byte[] chunkPacketData = chunkBaos.toByteArray();
 
-            DatagramPacket packet = new DatagramPacket(compressedData, compressedData.length, group, this.port);
+            // Envia o chunk
+            DatagramPacket packet = new DatagramPacket(chunkPacketData, chunkPacketData.length, group, this.port);
             socket.send(packet);
+        }
 
-        } catch (IOException e) {
-            System.err.println("IOException: " + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            if (socket != null) {
-                socket.close();
+    } catch (IOException e) {
+        System.err.println("IOException: " + e.getMessage());
+        e.printStackTrace();
+    }
+}
+
+
+
+
+    private void listenForNackAndTerminationMessages() {
+        try (DatagramSocket socket = new DatagramSocket(this.nackPort)) {
+            byte[] buffer = new byte[MAX_UDP_PACKET_SIZE];
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+            while (!Thread.currentThread().isInterrupted()) {
+                socket.receive(packet);
+
+                try (ByteArrayInputStream bais = new ByteArrayInputStream(packet.getData());
+                    ObjectInputStream ois = new ObjectInputStream(bais)) {
+                    Object receivedObject = ois.readObject();
+
+                    if (receivedObject instanceof NACKMessage) {
+                        
+                        NACKMessage nackMessage = (NACKMessage) receivedObject;
+                        String messageId = nackMessage.getMessageId();
+                        Set<Integer> missingChunks = nackMessage.getMissingChunks();
+
+                        System.out.println("Thread " + this.threadId + " (NACK port " + this.nackPort + ") received NACK message for messageId: " + nackMessage.getMessageId());
+
+                        byte[][] originalData = originalDataChunks.get(messageId);
+                        if (originalData != null) {
+                            for (Integer chunkIndex : missingChunks) {
+                                if (chunkIndex != null && chunkIndex >= 0 && chunkIndex < originalData.length) {
+                                    resendChunk(chunkIndex, messageId, originalData[chunkIndex]);
+                                } else {
+                                    System.err.println("Invalid chunk index or chunk data is null for index " + chunkIndex);
+                                }
+                            }
+                        } else {
+                            System.err.println("No original data found for message ID: " + messageId);
+                        }
+                    }
+                    
+                      else if (receivedObject instanceof TerminationMessage) {
+                        TerminationMessage terminationMessage = (TerminationMessage) receivedObject;
+                        if (terminationMessage.getThreadId() == this.threadId) {
+                            System.out.println("Termination message received for thread " + this.threadId);
+                            
+                        }
+                    }
+                     
+                    
+                } catch (IOException | ClassNotFoundException e) {
+                    System.err.println("Error handling the message: " + e.getMessage());
+                }
             }
+        } catch (IOException e) {
+            System.err.println("Error setting up the socket to listen for messages: " + e.getMessage());
         }
     }
+
+
+
+
+
+    private void resendChunk(Integer chunkIndex, String messageId, byte[] chunkData) {
+        try {
+            
+            // Serialize the chunk data along with any necessary headers or identifiers
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+                oos.writeObject(new MessageChunk(chunkIndex, originalDataChunks.get(messageId).length, chunkData, messageId, nackPort, threadId));
+            }
+            byte[] dataToSend = baos.toByteArray();
+            DatagramPacket resendPacket = new DatagramPacket(dataToSend, dataToSend.length, InetAddress.getByName(multicastAddress), port);
+            try (MulticastSocket resendSocket = new MulticastSocket()) {
+                resendSocket.send(resendPacket);
+                System.out.println("Resent chunk " + chunkIndex + " for message " + messageId);
+            }
+        } catch (IOException e) {
+            System.err.println("IOException while resending chunk: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+
+
+
     
 
     
@@ -104,7 +218,7 @@ public class Downloader implements Runnable {
 
     public void handleIndexCommand(GatewayInterface gateway) {
     try {
-        System.out.println("UPDATE 15:20");
+        
         String currentUrl = gateway.fetchNextUrl();
         if (currentUrl != null && !currentUrl.isEmpty()) {
             Document doc = Jsoup.connect(currentUrl).get();
@@ -133,7 +247,7 @@ public class Downloader implements Runnable {
                 String foundUrl = link.absUrl("href");
                 if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
                     outboundLinks.add(foundUrl);
-                    //gateway.addUrlToQueue(foundUrl);
+                    gateway.addUrlToQueue(foundUrl);
                 }
             }
 
@@ -190,7 +304,11 @@ public class Downloader implements Runnable {
 
     @Override
     public void run() {
-        System.out.println("A THREAD WAS CREATED HERE");
+        
+        Thread listenerThread = new Thread(this::listenForNackAndTerminationMessages);
+        listenerThread.start();
+
+        System.out.println("Thread " + threadId + " is running");
         try {
             while (!Thread.currentThread().isInterrupted()) {
                 synchronized (sharedCounter) {
@@ -206,7 +324,7 @@ public class Downloader implements Runnable {
                     sharedCounter.set((sharedCounter.get() + 1) % totalThreads);
                     sharedCounter.notifyAll();
                 }
-                
+
                 // Optional: If no URL, sleep before the next check
                 Thread.sleep(5000);
             }
@@ -216,21 +334,32 @@ public class Downloader implements Runnable {
         } catch (IOException e) {
             System.err.println("Error in Downloader: " + e.getMessage());
             e.printStackTrace();
-        }
+        } // No need for finally block since we're not interrupting the listenerThread
     }
+
+
+    
 
     public static void main(String[] args) {
         try {
+            if (args.length < 1) {
+                System.err.println("Usage: java Downloader <nackPort>");
+                return;
+            }
+    
+            
+    
             // Connect to RMI registry
             Registry registry = LocateRegistry.getRegistry("localhost", 1099);
             GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
+    
+            int baseNackPort = Integer.parseInt(args[0]); // Starting port for NACK messages //começar na 5000
+            int numberOfDownloaders = 5;
 
-            // Start the downloader thread(s)
-            int numberOfDownloaders = 5; // Or any number you choose
             for (int i = 0; i < numberOfDownloaders; i++) {
-                Downloader downloader = new Downloader(gateway,i);
-                Thread thread = new Thread(downloader);
-                thread.start();
+                int threadNackPort = baseNackPort + i; // Unique port for each thread
+                Downloader downloader = new Downloader(gateway, i, threadNackPort);
+                new Thread(downloader).start();
             }
         } catch (Exception e) {
             System.err.println("Downloader exception: " + e.toString());
