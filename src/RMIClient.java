@@ -16,14 +16,30 @@ public class RMIClient {
     private RMIClient() {}
 
     public static void main(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Error: You must provide the server address and port number as command line arguments.");
+            System.err.println("Usage: java RMIClient <Server_IP> <RMI_Registry_Port>");
+            System.exit(1);
+        }
+    
+        String serverAddress = args[0];
+        int serverPort = Integer.parseInt(args[1]);
+
+
         try {
             System.out.println("Default Charset=" + Charset.defaultCharset());
             System.setProperty("file.encoding", "UTF-8");
             System.out.println("file.encoding=" + System.getProperty("file.encoding"));
             System.out.println("Default Charset=" + Charset.defaultCharset());
             System.out.println("Default Charset in Use=" + new OutputStreamWriter(new ByteArrayOutputStream()).getEncoding());
+
+
+
+            
             // Creating the registry
-            Registry registry = LocateRegistry.getRegistry();
+            System.out.println("Connecting to RMI Registry at " + serverAddress + ":" + serverPort);
+             // Creating the registry with provided server address and port.
+            Registry registry = LocateRegistry.getRegistry(serverAddress, serverPort);
             GatewayInterface stub = (GatewayInterface) registry.lookup("GatewayService");
 
             Scanner scanner = new Scanner(System.in, "windows-1252"); 

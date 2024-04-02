@@ -87,6 +87,13 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(file))) {
                 pageInfoMap = (ConcurrentHashMap<String, PageInfo>) in.readObject();
                 invertedIndex = (ConcurrentHashMap<String, Set<String>>) in.readObject();
+                
+                System.out.println("PageInfoMap: ");
+                pageInfoMap.forEach((url, pageInfo) -> System.out.println("URL: " + url + ", PageInfo: " + pageInfo));
+                System.out.println("Inverted Index: ");
+                invertedIndex.forEach((word, urls) -> {
+                    System.out.println("Word: " + word + ", URLs: " + urls);
+    });
                 // ...
             } catch (EOFException e) {
                 System.err.println("Reached end of file unexpectedly. Possibly corrupted file.");

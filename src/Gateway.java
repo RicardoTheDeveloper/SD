@@ -318,12 +318,19 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
 
     public static void main(String[] args) {
+        if (args.length < 1) {
+            System.err.println("Error: You must provide the RMI Registry port number as a command line argument.");
+            System.err.println("Usage: java Gateway <RMI_Registry_Port>");
+            System.exit(1);
+        }
+
+        int registryPort = Integer.parseInt(args[0]);
+
         try {
             Gateway server = new Gateway();
-            Registry registry = LocateRegistry.createRegistry(1099); // porto standard RMI registry
+            Registry registry = LocateRegistry.createRegistry(registryPort); // Use the provided port for RMI registry
             registry.rebind("GatewayService", server);
-            System.out.println("Gateway is ready.");
-            
+            System.out.println("Gateway is ready on port " + registryPort + ".");
         } catch (Exception e) {
             System.err.println("Gateway exception: " + e.toString());
             e.printStackTrace();
