@@ -29,7 +29,7 @@ public class Downloader implements Runnable {
 
     private static final AtomicInteger sharedCounter = new AtomicInteger(0);
     private final int threadId;
-    private static int totalThreads = 5;
+    private static int totalThreads = 100;
     private String multicastAddress = "224.3.2.1";
     private int port = 4321;
     private GatewayInterface gateway;
@@ -354,7 +354,7 @@ public void sendMulticastMessage(PageInfo pageInfo) {
             GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
     
             int baseNackPort = Integer.parseInt(args[0]); // Starting port for NACK messages //começar na 5000
-            int numberOfDownloaders = 5;
+            int numberOfDownloaders = 100;
 
             for (int i = 0; i < numberOfDownloaders; i++) {
                 int threadNackPort = baseNackPort + i; // Unique port for each thread

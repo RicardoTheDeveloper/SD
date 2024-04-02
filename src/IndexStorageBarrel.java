@@ -1,6 +1,10 @@
 package src;
 
 import java.net.*;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -79,14 +83,14 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     private void loadState() {
         File file = new File(DATA_FILE + id + ".dat");
-        if (file.exists()) {
+        if (file.exists() && file.length() > 0) { // Check that the file exists and is not empty
             try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(file))) {
                 pageInfoMap = (ConcurrentHashMap<String, PageInfo>) in.readObject();
                 invertedIndex = (ConcurrentHashMap<String, Set<String>>) in.readObject();
-
-                
-                
-                
+                // ...
+            } catch (EOFException e) {
+                System.err.println("Reached end of file unexpectedly. Possibly corrupted file.");
+                e.printStackTrace();
             } catch (IOException | ClassNotFoundException e) {
                 e.printStackTrace();
             }
@@ -94,15 +98,61 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     }
 
 
-    private void saveState() {
-        try (ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(DATA_FILE + id + ".dat"))) {
+    private synchronized void saveState() {
+        File file = new File(DATA_FILE + id + ".dat");
+        RandomAccessFile raf = null;
+        FileChannel fileChannel = null;
+        FileLock lock = null;
+        try {
+            raf = new RandomAccessFile(file, "rw");
+            fileChannel = raf.getChannel();
+    
+            System.out.println("Attempting to acquire file lock...");
+            lock = fileChannel.lock(); // Lock the file
+            System.out.println("File lock acquired. Truncating file...");
+            fileChannel.truncate(0); // Clear the file content
+    
+            System.out.println("Writing objects to file...");
+            ObjectOutputStream out = new ObjectOutputStream(Channels.newOutputStream(fileChannel));
             out.writeObject(pageInfoMap);
             out.writeObject(invertedIndex);
-            // Add other relevant data structures
+            // Write other necessary objects
+            out.close();
+            System.out.println("Objects written to file successfully.");
         } catch (IOException e) {
+            System.err.println("IO Exception in saveState: " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            // Release the lock and close resources in the finally block
+            try {
+                if (lock != null && lock.isValid()) {
+                    lock.release();
+                    System.out.println("File lock released.");
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            try {
+                if (fileChannel != null) {
+                    fileChannel.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            try {
+                if (raf != null) {
+                    raf.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
+    
+    
+
+
+    
 
     private void printLoadedData() {
         System.out.println("Loaded Data for Barrel ID: " + id);
@@ -537,6 +587,13 @@ public double getAverageResponseTime() throws RemoteException {
         }
     }
     
+    public void cleanupResources() {
+        // Close multicast socket if open
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+        // Perform other resource cleanup if necessary
+    }
 
     public static void main(String[] args) {
         try {
@@ -564,6 +621,15 @@ public double getAverageResponseTime() throws RemoteException {
     
             // Start the thread for processing incoming multicast packets
             new Thread(barrel).start();
+
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                barrel.saveState(); // Save the state one last time.
+                barrel.cleanupResources(); // Method to close sockets and other resources.
+                System.out.println("Shutdown hook completed.");
+            }));
+
+
     
             System.out.println("Index Storage Barrel RMI Service with ID " + id + " is ready at " +
                                multicastAddress + ":" + port + " with RMI registry on port " + registryPort);
