@@ -282,7 +282,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
 
         private void startPeriodicDiscovery() {
-        scheduler.scheduleAtFixedRate(() -> discoverBarrels(1100, 1200), 0, 1, TimeUnit.MINUTES);
+        scheduler.scheduleAtFixedRate(() -> discoverBarrels(1100, 1200), 0, 3, TimeUnit.SECONDS);
     }
 
     private void discoverBarrels(int startPort, int endPort) {

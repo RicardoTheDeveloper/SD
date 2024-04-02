@@ -210,21 +210,27 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     @Override
     public void run() {
-        while (!Thread.currentThread().isInterrupted()) {
+        while (!Thread.currentThread().isInterrupted() && !executorService.isShutdown()) {
             try {
-                byte[] buffer = new byte[bufferSize]; // Increased buffer size
-
+                byte[] buffer = new byte[bufferSize];
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
+
+                // Check if executorService has been shutdown
+                if (executorService.isShutdown()) {
+                    break; // Exit the loop if the executor service is shut down
+                }
 
                 // Process the received packet in a separate thread
                 executorService.submit(() -> processPacket(packet));
             } catch (IOException e) {
-                e.printStackTrace();
+                if (!executorService.isShutdown()) {
+                    e.printStackTrace();
+                }
             }
         }
-        executorService.shutdown();
     }
+
 
 
 
@@ -595,6 +601,28 @@ public double getAverageResponseTime() throws RemoteException {
         // Perform other resource cleanup if necessary
     }
 
+
+    public void addShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // Now executorService can be accessed directly as it's in instance context
+            executorService.shutdown();
+            try {
+                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
+                    if (!executorService.awaitTermination(5, TimeUnit.SECONDS))
+                        System.err.println("ExecutorService did not terminate");
+                }
+            } catch (InterruptedException ie) {
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+    
+            saveState();
+            cleanupResources();
+            System.out.println("Shutdown hook completed.");
+        }));
+    }
+
     public static void main(String[] args) {
         try {
             // Check if the correct number of arguments are provided
@@ -614,6 +642,8 @@ public double getAverageResponseTime() throws RemoteException {
     
             // Create the IndexStorageBarrel instance with the provided ID, multicast address, and port
             IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port);
+
+            barrel.addShutdownHook();
     
             // Register the object with the RMI registry using the ID in the service name
             Registry registry = LocateRegistry.createRegistry(registryPort);
@@ -623,11 +653,8 @@ public double getAverageResponseTime() throws RemoteException {
             new Thread(barrel).start();
 
 
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                barrel.saveState(); // Save the state one last time.
-                barrel.cleanupResources(); // Method to close sockets and other resources.
-                System.out.println("Shutdown hook completed.");
-            }));
+            
+            
 
 
     
