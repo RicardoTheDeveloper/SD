@@ -1,4 +1,4 @@
-package src;
+// Remove the package declaration
 
 import java.net.*;
 import java.rmi.RemoteException;
@@ -45,8 +45,13 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         this.port = port;
         this.group = InetAddress.getByName(multicastAddress);
         this.socket = new MulticastSocket(this.port);
+<<<<<<< HEAD
         this.socket.joinGroup(this.group);
         this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+=======
+        this.socket.joinGroup(new InetSocketAddress(this.group, this.port), NetworkInterface.getByInetAddress(InetAddress.getLocalHost()));
+        this.index = new HashMap<>();
+>>>>>>> a419ce9dd318d807d5df659ebb268e60c5f5af4d
     }
 
     private String normalizeString(String input) {
