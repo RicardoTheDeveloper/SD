@@ -1,4 +1,4 @@
-package src;
+// Remove the package declaration since the file is already in the correct package.
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;

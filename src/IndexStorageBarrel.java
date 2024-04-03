@@ -1,4 +1,4 @@
-package src;
+// Remove the package declaration
 
 import java.net.*;
 import java.nio.channels.Channels;
@@ -76,6 +76,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     
         // Create a new multicast socket that is bound to a specified port
         this.socket = new MulticastSocket(this.port);
+<<<<<<< HEAD
     
         // Determine the correct network interface
         NetworkInterface networkInterface = NetworkInterface.getByInetAddress(InetAddress.getLocalHost());
@@ -95,6 +96,15 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     
         loadState(); // Load saved state from file
         synchronizeData(); // Synchronize data with other barrels
+=======
+<<<<<<< HEAD
+        this.socket.joinGroup(this.group);
+        this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+=======
+        this.socket.joinGroup(new InetSocketAddress(this.group, this.port), NetworkInterface.getByInetAddress(InetAddress.getLocalHost()));
+        this.index = new HashMap<>();
+>>>>>>> a419ce9dd318d807d5df659ebb268e60c5f5af4d
+>>>>>>> a8b94919a16ffabb5f18755051e016176aea3ea2
     }
     
 
