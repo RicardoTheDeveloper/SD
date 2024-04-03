@@ -21,22 +21,24 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     private ConcurrentLinkedQueue<String> urlQueue; // Queue de URLs
     
     private List<BarrelData> barrels; // List of barrel stubs with their IDs
+    private List<String> barrelServerIps;  // New member to store the IP addresses of the barrel servers
 
     private int nextBarrelIndex = 0; // Index for round-robin
     private final Map<String, Integer> searchFrequencies = new ConcurrentHashMap<>();
     // Fields to keep track of barrels and their response times
     private final Map<String, Boolean> barrelStatus = new ConcurrentHashMap<>();
     private final Map<String, List<Double>> barrelResponseTimes = new ConcurrentHashMap<>();
+    
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-    protected Gateway() throws RemoteException {
+    protected Gateway(List<String> barrelServerIps) throws RemoteException {
         super();
         urlQueue = new ConcurrentLinkedQueue<>();
         barrels = new ArrayList<>();
-        discoverBarrels(1100, 1200); // Check ports 1100 to 1200 for barrels
-        startPeriodicDiscovery();
-        
+        this.barrelServerIps = barrelServerIps; // Store the provided IPs
+        discoverBarrels(1100,1200,barrelServerIps); // Use the IPs to discover barrels
+        startPeriodicDiscovery(); // Start the periodic discovery process
     }
 
     
@@ -281,14 +283,16 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     }
 
 
-        private void startPeriodicDiscovery() {
-        scheduler.scheduleAtFixedRate(() -> discoverBarrels(1100, 1200), 0, 3, TimeUnit.SECONDS);
+    private void startPeriodicDiscovery() {
+    scheduler.scheduleAtFixedRate(() -> discoverBarrels(1100, 1200, barrelServerIps), 0, 3, TimeUnit.SECONDS);
     }
 
-    private void discoverBarrels(int startPort, int endPort) {
+
+    private void discoverBarrels(int startPort, int endPort, List<String> barrelServerIps) {
+    for (String serverIp : barrelServerIps) {
         for (int port = startPort; port <= endPort; port++) {
             try {
-                Registry registry = LocateRegistry.getRegistry("localhost", port);
+                Registry registry = LocateRegistry.getRegistry(serverIp, port);
                 String[] boundNames = registry.list();
                 for (String name : boundNames) {
                     if (name.startsWith("IndexStorageBarrelService_")) {
@@ -298,18 +302,20 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
                                 IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup(name);
                                 barrels.add(new BarrelData(id, barrelStub));
                                 updateBarrelStatus(id, true);
-                                System.out.println("Discovered and connected to barrel with ID: " + id + " on port: " + port);
+                                System.out.println("Discovered and connected to barrel with ID: " + id + " at " + serverIp + ":" + port);
                             } catch (Exception e) {
-                                System.err.println("Failed to connect to barrel service: " + name + " on port: " + port);
+                                System.err.println("Failed to connect to barrel service: " + name + " at " + serverIp + ":" + port);
                             }
                         }
                     }
                 }
             } catch (Exception e) {
-                //System.out.println("No registry found on port: " + port);
+                System.err.println("Could not connect to registry on " + serverIp + ":" + port);
             }
         }
     }
+}
+
 
     private boolean isAlreadyAdded(String id) {
         return barrels.stream().anyMatch(barrel -> barrel.id.equals(id));
@@ -318,16 +324,21 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
 
     public static void main(String[] args) {
-        if (args.length < 1) {
-            System.err.println("Error: You must provide the RMI Registry port number as a command line argument.");
-            System.err.println("Usage: java Gateway <RMI_Registry_Port>");
+        if (args.length < 2) {
+            System.err.println("Error: You must provide the RMI Registry port number and the IP address of the barrel server as command line arguments.");
+            System.err.println("Usage: java Gateway <RMI_Registry_Port> <Barrel_Server_IP> [...<Other_Barrel_Servers_IPs>]");
             System.exit(1);
         }
 
         int registryPort = Integer.parseInt(args[0]);
+        List<String> barrelServerIps = Arrays.asList(Arrays.copyOfRange(args, 1, args.length));
+
+        System.setProperty("java.rmi.server.hostname", "192.168.1.226");//ISTO AINDA TEM DE SER POR ARGUMENTO
+
+        
 
         try {
-            Gateway server = new Gateway();
+            Gateway server = new Gateway(barrelServerIps);
             Registry registry = LocateRegistry.createRegistry(registryPort); // Use the provided port for RMI registry
             registry.rebind("GatewayService", server);
             System.out.println("Gateway is ready on port " + registryPort + ".");

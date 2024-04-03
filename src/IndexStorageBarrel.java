@@ -69,17 +69,34 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     private static final String DATA_FILE = "IndexStorageBarrelData_";
 
-    public IndexStorageBarrel(String id,String multicastAddress, int port) throws IOException {
+    public IndexStorageBarrel(String id, String multicastAddress, int port) throws IOException {
         this.id = id; // Store the provided ID
         this.port = port;
         this.group = InetAddress.getByName(multicastAddress);
+    
+        // Create a new multicast socket that is bound to a specified port
         this.socket = new MulticastSocket(this.port);
-        this.socket.joinGroup(this.group);
+    
+        // Determine the correct network interface
+        NetworkInterface networkInterface = NetworkInterface.getByInetAddress(InetAddress.getLocalHost());
+    
+        // Check if the network interface is not null and supports multicast
+        if (networkInterface != null && networkInterface.supportsMulticast()) {
+            // Set the network interface for the multicast socket
+            this.socket.setNetworkInterface(networkInterface);
+            // Join the multicast group on a specific interface
+            this.socket.joinGroup(new InetSocketAddress(this.group, this.port), networkInterface);
+        } else {
+            // Join the multicast group without specifying the interface, it will pick the default
+            this.socket.joinGroup(this.group);
+        }
+    
         this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-
+    
         loadState(); // Load saved state from file
         synchronizeData(); // Synchronize data with other barrels
     }
+    
 
     private void loadState() {
         File file = new File(DATA_FILE + id + ".dat");
@@ -631,48 +648,49 @@ public double getAverageResponseTime() throws RemoteException {
     }
 
     public static void main(String[] args) {
-        try {
-            // Check if the correct number of arguments are provided
-            if (args.length != 4) {
-                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <port> <rmi-registry-port>");
-                return;
-            }
+        // Check if the correct number of arguments are provided
+        if (args.length != 5) {
+            System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <rmi-registry-host>");
+            return;
+        }
+
+        System.setProperty("java.rmi.server.hostname", "192.168.140.10");
     
+        try {
             // Extract command line arguments
             String id = args[0];
             String multicastAddress = args[1];
-            int port = Integer.parseInt(args[2]);
+            int multicastPort = Integer.parseInt(args[2]);
             int registryPort = Integer.parseInt(args[3]);
+            String registryHost = args[4]; // Hostname or IP address of the RMI registry
     
             // Output the ID to confirm it's being used
             System.out.println("Starting Index Storage Barrel with ID: " + id);
     
             // Create the IndexStorageBarrel instance with the provided ID, multicast address, and port
-            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port);
-
-            barrel.addShutdownHook();
+            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, multicastPort);
     
-            // Register the object with the RMI registry using the ID in the service name
-            Registry registry = LocateRegistry.createRegistry(registryPort);
+            // Connect to the RMI registry at the given host and port
+            Registry registry = LocateRegistry.getRegistry(registryHost, registryPort);
             registry.rebind("IndexStorageBarrelService_" + id, barrel);
     
             // Start the thread for processing incoming multicast packets
             new Thread(barrel).start();
-
-
-            
-            
-
-
+    
+            // Add shutdown hook
+            barrel.addShutdownHook();
     
             System.out.println("Index Storage Barrel RMI Service with ID " + id + " is ready at " +
-                               multicastAddress + ":" + port + " with RMI registry on port " + registryPort);
+                    multicastAddress + ":" + multicastPort + " with RMI registry on port " + registryPort);
+    
         } catch (NumberFormatException e) {
-            System.out.println("Invalid number format for port or registry port.");
+            System.out.println("Invalid number format for ports.");
+            e.printStackTrace();
         } catch (IOException e) {
             System.out.println("Error starting Index Storage Barrel: " + e.getMessage());
             e.printStackTrace();
         }
     }
+    
     
 }
