@@ -618,8 +618,17 @@ public double getAverageResponseTime() throws RemoteException {
     }
 
 
-    public void addShutdownHook() {
+    public void addShutdownHook(GatewayInterface gatewayStub) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                if (gatewayStub != null) {
+                    gatewayStub.notifyBarrelInactive(this.id); // Inform the Gateway about the shutdown
+                }
+            } catch (RemoteException e) {
+                System.err.println("Error notifying the Gateway: " + e.getMessage());
+                e.printStackTrace();
+            }
+
             // Now executorService can be accessed directly as it's in instance context
             executorService.shutdown();
             try {
@@ -639,65 +648,47 @@ public double getAverageResponseTime() throws RemoteException {
         }));
     }
 
+
+    
+
     public static void main(String[] args) {
         try {
-            // Check if the correct number of arguments are provided
-            if (args.length != 6) {
-                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <ip host> <ip other machine>");
+            if (args.length != 8) { // Now expecting 8 arguments
+                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <ip host> <ip other machine> <gateway IP> <gateway RMI port>");
                 return;
             }
     
-            // Extract command line arguments
             String id = args[0];
             String multicastAddress = args[1];
             int port = Integer.parseInt(args[2]);
             int registryPort = Integer.parseInt(args[3]);
-            String rmiBindAddress = args[4]; // Endereço IP para ligação RMI
+            String rmiBindAddress = args[4];
             String remoteIpAddress = args[5];
-
+            String gatewayIp = args[6]; // Gateway's IP
+            int gatewayPort = Integer.parseInt(args[7]); // Gateway's RMI Registry port
+    
             System.setProperty("java.rmi.server.hostname", rmiBindAddress);
     
-            // Output the ID to confirm it's being used
-            System.out.println("Starting Index Storage Barrel with ID: " + id);
+            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port, rmiBindAddress, remoteIpAddress);
 
-            
-            
-            
-            
+            // Obtain the Gateway stub
+            Registry gatewayRegistry = LocateRegistry.getRegistry(gatewayIp, gatewayPort);
+            GatewayInterface gatewayStub = (GatewayInterface) gatewayRegistry.lookup("GatewayService");
     
-            // Create the IndexStorageBarrel instance with the provided ID, multicast address, and port
-            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port,rmiBindAddress, remoteIpAddress);
-
-            // Register the object with the local RMI registry
             Registry registry = LocateRegistry.createRegistry(registryPort);
             registry.rebind("IndexStorageBarrelService_" + id, barrel);
-            
-            //barrel.synchronizeData();
-
-
-            
-
-            barrel.addShutdownHook();
     
             
     
-            // Start the thread for processing incoming multicast packets
+            barrel.addShutdownHook(gatewayStub);
+    
             new Thread(barrel).start();
-
-
-            
-            
-
-
-    
-            System.out.println("Index Storage Barrel RMI Service with ID " + id + " is ready at " +
-                               multicastAddress + ":" + port + " with RMI registry on port " + registryPort);
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid number format for port or registry port.");
-        } catch (IOException e) {
-            System.out.println("Error starting Index Storage Barrel: " + e.getMessage());
+            System.out.println("Index Storage Barrel RMI Service with ID " + id + " is ready at " + multicastAddress + ":" + port + " with RMI registry on port " + registryPort);
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
             e.printStackTrace();
         }
     }
+    
     
 }

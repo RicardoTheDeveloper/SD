@@ -176,16 +176,21 @@ private static void handleSystemStatus(GatewayInterface stub) {
 
     System.out.println("Monitoring system status. Type 'exit' to stop.");
 
+    final boolean[] primeiraVezAux = new boolean[1];
+    primeiraVezAux[0] = true; // initialize as true
+
     Thread statusThread = new Thread(() -> {
         while (!exitFlag.get()) {
             try {
                 String systemStatus = stub.getSystemStatus();
                 // Só atualiza e imprime o status se ele mudou e foi obtido com sucesso.
-                if (!systemStatus.equals(lastSystemStatus)) {
+                if (!systemStatus.equals(lastSystemStatus) || (primeiraVezAux[0])) {
+                    primeiraVezAux[0] = false;
                     System.out.println("System Status Updated: \n" + systemStatus);
                     lastSystemStatus = systemStatus; // Atualiza o último status conhecido.
                 }
             } catch (RemoteException e) {
+                System.out.println("É NA BOUUAAAA MEUUUU??");
                 // Suprimir a mensagem de erro permite uma operação mais silenciosa e resiliente.
                 // Não imprime a mensagem de erro para o usuário.
             }

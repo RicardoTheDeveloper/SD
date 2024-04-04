@@ -16,6 +16,7 @@ public interface GatewayInterface extends Remote {
     public void notifyDownloader() throws RemoteException;
     void addUrlToQueue(String url) throws RemoteException;
     String getSystemStatus() throws RemoteException;
+    void notifyBarrelInactive(String barrelID) throws RemoteException;
     
     
 }

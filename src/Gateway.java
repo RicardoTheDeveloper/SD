@@ -118,7 +118,23 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
 
 
-    
+    @Override
+    public void notifyBarrelInactive(String barrelID) throws RemoteException {
+        System.out.println("Barrel " + barrelID + " is now inactive.");
+        updateBarrelStatus(barrelID, false);
+
+        // Remove the barrel from the barrels list
+        barrels.removeIf(barrelData -> barrelData.id.equals(barrelID));
+
+        // Printing the status of all barrels
+        System.out.println("Current Barrel Status:");
+        barrelStatus.forEach((id, status) -> System.out.println("Barrel ID: " + id + ", Active: " + status));
+
+        // Printing the list of barrels
+        System.out.println("Current list of Barrels:");
+        barrels.forEach(barrel -> System.out.println("Barrel ID: " + barrel.id));
+    }
+
 
     @Override
     public String remoteGetLinksToPointingTo(String url) throws RemoteException {
