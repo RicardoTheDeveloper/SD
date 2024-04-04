@@ -30,13 +30,15 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-    protected Gateway() throws RemoteException {
+    private List<String> isbMachineIps; // Lista dos IPs das máquinas ISB
+
+    protected Gateway(List<String> isbMachineIps) throws RemoteException {
         super();
+        this.isbMachineIps = isbMachineIps; // Inicializar com IPs fornecidos
         urlQueue = new ConcurrentLinkedQueue<>();
         barrels = new ArrayList<>();
-        discoverBarrels(1100, 1200); // Check ports 1100 to 1200 for barrels
+        discoverBarrels(); // Descobrir barris nos IPs fornecidos
         startPeriodicDiscovery();
-        
     }
 
     
@@ -282,34 +284,37 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
 
         private void startPeriodicDiscovery() {
-        scheduler.scheduleAtFixedRate(() -> discoverBarrels(1100, 1200), 0, 3, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(() -> discoverBarrels(), 0, 3, TimeUnit.SECONDS);
     }
 
-    private void discoverBarrels(int startPort, int endPort) {
-        for (int port = startPort; port <= endPort; port++) {
-            try {
-                Registry registry = LocateRegistry.getRegistry("localhost", port);
-                String[] boundNames = registry.list();
-                for (String name : boundNames) {
-                    if (name.startsWith("IndexStorageBarrelService_")) {
-                        String id = name.substring(name.lastIndexOf('_') + 1);
-                        if (!isAlreadyAdded(id)) {
-                            try {
-                                IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup(name);
-                                barrels.add(new BarrelData(id, barrelStub));
-                                updateBarrelStatus(id, true);
-                                System.out.println("Discovered and connected to barrel with ID: " + id + " on port: " + port);
-                            } catch (Exception e) {
-                                System.err.println("Failed to connect to barrel service: " + name + " on port: " + port);
+    private void discoverBarrels() {
+        for (String ip : isbMachineIps) {
+            for (int port = 1100; port <= 1110; port++) {
+                try {
+                    Registry registry = LocateRegistry.getRegistry(ip, port);
+                    String[] boundNames = registry.list();
+                    for (String name : boundNames) {
+                        if (name.startsWith("IndexStorageBarrelService_")) {
+                            String id = name.substring(name.lastIndexOf('_') + 1);
+                            if (!isAlreadyAdded(id)) {
+                                try {
+                                    IndexStorageBarrelInterface barrelStub = (IndexStorageBarrelInterface) registry.lookup(name);
+                                    barrels.add(new BarrelData(id, barrelStub));
+                                    updateBarrelStatus(id, true);
+                                    System.out.println("Discovered and connected to barrel with ID: " + id + " at " + ip + ":" + port);
+                                } catch (Exception e) {
+                                    System.err.println("Failed to connect to barrel service: " + name + " at " + ip + ":" + port);
+                                }
                             }
                         }
                     }
+                } catch (Exception e) {
+                    System.err.println("Could not connect to registry at " + ip + ":" + port);
                 }
-            } catch (Exception e) {
-                //System.out.println("No registry found on port: " + port);
             }
         }
     }
+    
 
     private boolean isAlreadyAdded(String id) {
         return barrels.stream().anyMatch(barrel -> barrel.id.equals(id));
@@ -337,7 +342,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         System.setProperty("java.rmi.server.hostname", gatewayIP);
 
         try {
-            Gateway server = new Gateway();
+            
+            Gateway server = new Gateway(isbMachineIps);
             Registry registry = LocateRegistry.createRegistry(registryPort); // Use the provided port for RMI registry
             registry.rebind("GatewayService", server);
             System.out.println("Gateway is ready on port " + registryPort + ".");
