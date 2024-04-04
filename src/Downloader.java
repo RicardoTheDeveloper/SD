@@ -342,20 +342,20 @@ public void sendMulticastMessage(PageInfo pageInfo) {
 
     public static void main(String[] args) {
         try {
-            if (args.length < 1) {
-                System.err.println("Usage: java Downloader <nackPort>");
+            if (args.length < 3) {
+                System.err.println("Usage: java Downloader <nackPort> <gatewayIP> <registryPort>");
                 return;
             }
-    
-            
-    
-            // Connect to RMI registry
-            Registry registry = LocateRegistry.getRegistry("localhost", 1099);
-            GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
-    
-            int baseNackPort = Integer.parseInt(args[0]); // Starting port for NACK messages //começar na 5000
-            int numberOfDownloaders = 100;
 
+            int baseNackPort = Integer.parseInt(args[0]); // Starting port for NACK messages
+            String gatewayIP = args[1]; // IP da Gateway
+            int registryPort = Integer.parseInt(args[2]); // Porta do registro RMI (opcional, padrão 1099 se não fornecido)
+
+            // Conexão ao registro RMI na máquina Gateway
+            Registry registry = LocateRegistry.getRegistry(gatewayIP, registryPort);
+            GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
+
+            int numberOfDownloaders = 100;
             for (int i = 0; i < numberOfDownloaders; i++) {
                 int threadNackPort = baseNackPort + i; // Unique port for each thread
                 Downloader downloader = new Downloader(gateway, i, threadNackPort);
