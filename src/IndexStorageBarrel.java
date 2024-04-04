@@ -633,8 +633,8 @@ public double getAverageResponseTime() throws RemoteException {
     public static void main(String[] args) {
         try {
             // Check if the correct number of arguments are provided
-            if (args.length != 4) {
-                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <port> <rmi-registry-port>");
+            if (args.length != 5) {
+                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <ip host>");
                 return;
             }
     
@@ -643,6 +643,7 @@ public double getAverageResponseTime() throws RemoteException {
             String multicastAddress = args[1];
             int port = Integer.parseInt(args[2]);
             int registryPort = Integer.parseInt(args[3]);
+            String rmiBindAddress = args[4]; // Endereço IP para ligação RMI
     
             // Output the ID to confirm it's being used
             System.out.println("Starting Index Storage Barrel with ID: " + id);
@@ -653,6 +654,7 @@ public double getAverageResponseTime() throws RemoteException {
             barrel.addShutdownHook();
     
             // Register the object with the RMI registry using the ID in the service name
+            System.setProperty("java.rmi.server.hostname", rmiBindAddress);
             Registry registry = LocateRegistry.createRegistry(registryPort);
             registry.rebind("IndexStorageBarrelService_" + id, barrel);
     
