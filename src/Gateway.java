@@ -318,13 +318,21 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
 
     public static void main(String[] args) {
-        if (args.length < 1) {
-            System.err.println("Error: You must provide the RMI Registry port number as a command line argument.");
-            System.err.println("Usage: java Gateway <RMI_Registry_Port>");
+        // Validate arguments: Expecting at least 3 arguments
+        if (args.length < 3) {
+            System.err.println("Error: You must provide the RMI Registry port number, the Gateway IP address, and at least one ISB machine IP address as command line arguments.");
+            System.err.println("Usage: java Gateway <RMI_Registry_Port> <Gateway_IP_Address> <ISB_Machine_IP1> [...<ISB_Machine_IPn>]");
             System.exit(1);
         }
 
         int registryPort = Integer.parseInt(args[0]);
+        String gatewayIP = args[1]; // Gateway IP address
+
+        // Remaining arguments are the IPs of the ISB machines
+        List<String> isbMachineIps = Arrays.asList(Arrays.copyOfRange(args, 2, args.length));
+
+        // Set the system property for RMI to use the Gateway IP address
+        System.setProperty("java.rmi.server.hostname", gatewayIP);
 
         try {
             Gateway server = new Gateway();
