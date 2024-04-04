@@ -289,7 +289,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     private void discoverBarrels() {
         for (String ip : isbMachineIps) {
-            for (int port = 1100; port <= 1110; port++) {
+            for (int port = 1100; port <= 1105; port++) {
                 try {
                     Registry registry = LocateRegistry.getRegistry(ip, port);
                     String[] boundNames = registry.list();
