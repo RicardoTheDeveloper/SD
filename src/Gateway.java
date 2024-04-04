@@ -328,7 +328,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         int registryPort = Integer.parseInt(args[0]);
         String gatewayIP = args[1]; // Gateway IP address
 
-        //III
+        //
 
         // Remaining arguments are the IPs of the ISB machines
         List<String> isbMachineIps = Arrays.asList(Arrays.copyOfRange(args, 2, args.length));
