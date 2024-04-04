@@ -44,6 +44,9 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     private int port;
     final int bufferSize = 10 * 1024 * 1024;
 
+    private String localIpAddress;
+    private String remoteIpAddress;
+
     private ConcurrentHashMap<String, PageInfo> pageInfoMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, Set<String>> invertedIndex = new ConcurrentHashMap<>();
     private ExecutorService executorService;
@@ -69,16 +72,19 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     private static final String DATA_FILE = "IndexStorageBarrelData_";
 
-    public IndexStorageBarrel(String id,String multicastAddress, int port) throws IOException {
+    public IndexStorageBarrel(String id,String multicastAddress, int port, String localIpAddress, String remoteIpAddress) throws IOException {
         this.id = id; // Store the provided ID
         this.port = port;
+        this.localIpAddress = localIpAddress;
+        this.remoteIpAddress = remoteIpAddress;
         this.group = InetAddress.getByName(multicastAddress);
         this.socket = new MulticastSocket(this.port);
         this.socket.joinGroup(this.group);
         this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
         loadState(); // Load saved state from file
-        synchronizeData(); // Synchronize data with other barrels
+        synchronizeData();
+        
     }
 
     private void loadState() {
@@ -174,35 +180,38 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
 
     private void synchronizeData() {
-        for (int port = 1100; port <= 1200; port++) {
-            try {
-                Registry registry = LocateRegistry.getRegistry("localhost", port);
-                String[] boundNames = registry.list();
-                for (String name : boundNames) {
-                    if (name.startsWith("IndexStorageBarrelService_")) {
-                        String otherId = name.substring(name.lastIndexOf('_') + 1);
-                        if (!otherId.equals(this.id)) { // Ensure not to synchronize with self
-                            try {
-                                IndexStorageBarrelInterface otherBarrel = (IndexStorageBarrelInterface) registry.lookup(name);
-                                this.pageInfoMap = otherBarrel.getPageInfoMap();
-                                this.invertedIndex = otherBarrel.getInvertedIndex();
-                                this.saveState(); // Save the copied state
-                                System.out.println("Synchronized data from barrel ID: " + otherId);
-
-                                printLoadedData();
-                                return; // Data synchronized successfully, exit the loop
-                            } catch (Exception e) {
-                                System.err.println("Failed to synchronize data from barrel ID: " + otherId);
+        String[] ipAddresses = {localIpAddress, remoteIpAddress}; // Assuming these are correctly initialized
+    
+        for (String ipAddress : ipAddresses) {
+            for (int port = 1100; port <= 1105; port++) {
+                try {
+                    Registry registry = LocateRegistry.getRegistry(ipAddress, port);
+                    String[] boundNames = registry.list();
+                    for (String name : boundNames) {
+                        if (name.startsWith("IndexStorageBarrelService_")) {
+                            String otherId = name.substring(name.lastIndexOf('_') + 1);
+                            if (!otherId.equals(this.id)) {
+                                try {
+                                    IndexStorageBarrelInterface otherBarrel = (IndexStorageBarrelInterface) registry.lookup(name);
+                                    this.pageInfoMap = otherBarrel.getPageInfoMap();
+                                    this.invertedIndex = otherBarrel.getInvertedIndex();
+                                    saveState();
+                                    System.out.println("Synchronized data from barrel ID: " + otherId + " at IP: " + ipAddress);
+                                    return;
+                                } catch (Exception e) {
+                                    System.err.println("Failed to synchronize with barrel ID: " + otherId + " at IP: " + ipAddress + " on port: " + port);
+                                }
                             }
                         }
                     }
+                } catch (Exception e) {
+                    System.err.println("Cannot reach registry at IP: " + ipAddress + " on port: " + port);
                 }
-            } catch (Exception e) {
-                System.err.println("Error during synchronization process on port: " + port);
             }
         }
-        System.err.println("Failed to synchronize data from any barrel.");
+        System.err.println("Failed to synchronize with any barrels.");
     }
+    
     
 
 
@@ -633,8 +642,8 @@ public double getAverageResponseTime() throws RemoteException {
     public static void main(String[] args) {
         try {
             // Check if the correct number of arguments are provided
-            if (args.length != 5) {
-                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <ip host>");
+            if (args.length != 6) {
+                System.out.println("Usage: java IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <ip host> <ip other machine>");
                 return;
             }
     
@@ -644,19 +653,33 @@ public double getAverageResponseTime() throws RemoteException {
             int port = Integer.parseInt(args[2]);
             int registryPort = Integer.parseInt(args[3]);
             String rmiBindAddress = args[4]; // Endereço IP para ligação RMI
+            String remoteIpAddress = args[5];
+
+            System.setProperty("java.rmi.server.hostname", rmiBindAddress);
     
             // Output the ID to confirm it's being used
             System.out.println("Starting Index Storage Barrel with ID: " + id);
+
+            
+            
+            
+            
     
             // Create the IndexStorageBarrel instance with the provided ID, multicast address, and port
-            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port);
+            IndexStorageBarrel barrel = new IndexStorageBarrel(id, multicastAddress, port,rmiBindAddress, remoteIpAddress);
+
+            // Register the object with the local RMI registry
+            Registry registry = LocateRegistry.createRegistry(registryPort);
+            registry.rebind("IndexStorageBarrelService_" + id, barrel);
+            
+            //barrel.synchronizeData();
+
+
+            
 
             barrel.addShutdownHook();
     
-            // Register the object with the RMI registry using the ID in the service name
-            System.setProperty("java.rmi.server.hostname", rmiBindAddress);
-            Registry registry = LocateRegistry.createRegistry(registryPort);
-            registry.rebind("IndexStorageBarrelService_" + id, barrel);
+            
     
             // Start the thread for processing incoming multicast packets
             new Thread(barrel).start();

@@ -330,8 +330,12 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
             System.exit(1);
         }
 
+       
+
         int registryPort = Integer.parseInt(args[0]);
         String gatewayIP = args[1]; // Gateway IP address
+
+        System.setProperty("sun.rmi.transport.tcp.responseTimeout", "120000");
 
       
 
@@ -340,6 +344,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
         // Set the system property for RMI to use the Gateway IP address
         System.setProperty("java.rmi.server.hostname", gatewayIP);
+        
+
 
         try {
             

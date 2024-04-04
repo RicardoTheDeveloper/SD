@@ -11,6 +11,7 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class RMIClient {
     private RMIClient() {}
@@ -167,15 +168,53 @@ private static void handleCheckPagesLinkingTo(Scanner scanner, GatewayInterface 
 }
 
 
+private static String lastSystemStatus = ""; // Assegura-se de que esta variável esteja declarada na classe.
+
 private static void handleSystemStatus(GatewayInterface stub) {
-    try {
-        String systemStatus = stub.getSystemStatus();
-        System.out.println("System Status: \n" + systemStatus);
-    } catch (RemoteException e) {
-        System.err.println("Remote exception when trying to get system status.");
-        e.printStackTrace();
+    Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8.name());
+    AtomicBoolean exitFlag = new AtomicBoolean(false); // Flag para controle de saída
+
+    System.out.println("Monitoring system status. Type 'exit' to stop.");
+
+    Thread statusThread = new Thread(() -> {
+        while (!exitFlag.get()) {
+            try {
+                String systemStatus = stub.getSystemStatus();
+                // Só atualiza e imprime o status se ele mudou e foi obtido com sucesso.
+                if (!systemStatus.equals(lastSystemStatus)) {
+                    System.out.println("System Status Updated: \n" + systemStatus);
+                    lastSystemStatus = systemStatus; // Atualiza o último status conhecido.
+                }
+            } catch (RemoteException e) {
+                // Suprimir a mensagem de erro permite uma operação mais silenciosa e resiliente.
+                // Não imprime a mensagem de erro para o usuário.
+            }
+            try {
+                Thread.sleep(5000); // Espera um tempo antes de tentar novamente.
+            } catch (InterruptedException e) {
+                System.out.println("Monitoring interrupted.");
+                break; // Sair do loop se a thread for interrompida.
+            }
+        }
+    });
+
+    statusThread.start(); // Inicia a thread de monitoramento do status.
+
+    while (!"exit".equalsIgnoreCase(scanner.nextLine().trim())) {
+        System.out.println("Type 'exit' to stop monitoring system status.");
     }
+
+    exitFlag.set(true); // Sinaliza para a thread de status parar.
+    statusThread.interrupt(); // Interrompe a thread caso esteja esperando.
+    try {
+        statusThread.join(); // Aguarda a thread de status terminar.
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    }
+
+    System.out.println("Stopped monitoring system status.");
 }
+
 
 
 
