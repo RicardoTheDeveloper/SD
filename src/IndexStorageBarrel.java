@@ -113,54 +113,42 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     private synchronized void saveState() {
         File file = new File(DATA_FILE + id + ".dat");
-        RandomAccessFile raf = null;
-        FileChannel fileChannel = null;
-        FileLock lock = null;
-        try {
-            raf = new RandomAccessFile(file, "rw");
-            fileChannel = raf.getChannel();
+        try (RandomAccessFile raf = new RandomAccessFile(file, "rw");
+             FileChannel fileChannel = raf.getChannel()) {
     
-            System.out.println("Attempting to acquire file lock...");
-            lock = fileChannel.lock(); // Lock the file
-            System.out.println("File lock acquired. Truncating file...");
-            fileChannel.truncate(0); // Clear the file content
-    
-            System.out.println("Writing objects to file...");
-            ObjectOutputStream out = new ObjectOutputStream(Channels.newOutputStream(fileChannel));
-            out.writeObject(pageInfoMap);
-            out.writeObject(invertedIndex);
-            // Write other necessary objects
-            out.close();
-            System.out.println("Objects written to file successfully.");
-        } catch (IOException e) {
-            System.err.println("IO Exception in saveState: " + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            // Release the lock and close resources in the finally block
+            FileLock lock = null;
             try {
+                // Use tryLock e verifique se o lock não é nulo
+                lock = fileChannel.tryLock();
+                if (lock != null) {
+                    fileChannel.truncate(0); // Limpe o conteúdo do arquivo
+                    // Serialize state only if we hold the lock
+                    try (ObjectOutputStream out = new ObjectOutputStream(Channels.newOutputStream(fileChannel))) {
+                        out.writeObject(pageInfoMap);
+                        out.writeObject(invertedIndex);
+                        // O ObjectOutputStream é fechado automaticamente aqui
+                    }
+                } else {
+                    System.err.println("Unable to acquire file lock, state not saved.");
+                }
+            } catch (IOException e) {
+                System.err.println("IO Exception in saveState: " + e.getMessage());
+            } finally {
                 if (lock != null && lock.isValid()) {
                     lock.release();
-                    System.out.println("File lock released.");
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
             }
-            try {
-                if (fileChannel != null) {
-                    fileChannel.close();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            try {
-                if (raf != null) {
-                    raf.close();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        } catch (OverlappingFileLockException e) {
+            System.err.println("Overlapping File Lock Exception: " + e.getMessage());
+        } catch (IOException e) {
+            System.err.println("IOException when attempting to lock file: " + e.getMessage());
+        }
+        // Se a thread foi interrompida, limpe o status de interrupção
+        if (Thread.interrupted()) {
+            System.err.println("Thread interrupted during saveState, state may not have been saved.");
         }
     }
+    
     
     
 
@@ -621,32 +609,51 @@ public double getAverageResponseTime() throws RemoteException {
     public void addShutdownHook(GatewayInterface gatewayStub) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
+                // Inform the Gateway about the shutdown if the stub is not null
                 if (gatewayStub != null) {
-                    gatewayStub.notifyBarrelInactive(this.id); // Inform the Gateway about the shutdown
+                    gatewayStub.notifyBarrelInactive(this.id);
                 }
             } catch (RemoteException e) {
                 System.err.println("Error notifying the Gateway: " + e.getMessage());
                 e.printStackTrace();
             }
-
-            // Now executorService can be accessed directly as it's in instance context
+    
+            // Initiate an orderly shutdown
             executorService.shutdown();
             try {
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
-                    if (!executorService.awaitTermination(5, TimeUnit.SECONDS))
-                        System.err.println("ExecutorService did not terminate");
+                // Wait for existing tasks to terminate
+                if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                    System.out.println("ExecutorService still has tasks running after 60 seconds. Attempting to shut down now.");
+                    // Cancel currently executing tasks and return list of those awaiting execution
+                    List<Runnable> droppedTasks = executorService.shutdownNow();
+                    System.out.println("ExecutorService did not terminate. Dropped tasks: " + droppedTasks);
+                    // Wait again after canceling if necessary
+                    if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                        System.err.println("ExecutorService did not terminate.");
+                    }
                 }
             } catch (InterruptedException ie) {
+                // Re-cancel if the current thread also interrupted
                 executorService.shutdownNow();
+                // Preserve interrupt status
                 Thread.currentThread().interrupt();
             }
     
-            saveState();
+            // Try to save the state one last time if possible
+            try {
+                saveState();
+            } catch (Exception e) {
+                System.err.println("Failed to save state during shutdown: " + e.getMessage());
+                e.printStackTrace();
+            }
+    
+            // Perform other resource cleanup if necessary
             cleanupResources();
             System.out.println("Shutdown hook completed.");
         }));
     }
+    
+    
 
 
     
