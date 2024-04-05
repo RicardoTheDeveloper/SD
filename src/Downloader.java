@@ -25,18 +25,18 @@ import java.net.MulticastSocket;
  * responsible for sending multicast messages and listening for NACK (Not Acknowledged) and
  * termination messages.
  * 
- * <p>The `Downloader` class provides methods to send multicast messages containing page information
+ * The `Downloader` class provides methods to send multicast messages containing page information
  * and to listen for NACK and termination messages on a datagram socket.
  * 
- * <p>Usage:
- * <pre>
+ * Usage:
+ * 
  *     GatewayInterface gateway = new Gateway();
  *     int threadId = 1;
  *     int nackPort = 1234;
  *     Downloader downloader = new Downloader(gateway, threadId, nackPort);
  *     downloader.sendMulticastMessage(pageInfo);
  *     downloader.listenForNackAndTerminationMessages();
- * </pre>
+ * 
  */
 public class Downloader implements Runnable {
 

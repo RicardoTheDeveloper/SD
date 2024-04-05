@@ -446,7 +446,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      *             The remaining arguments should be the IP addresses of the Index Storage Barrel (ISB) machines.
      * 
      * Usage:
-     * java Gateway <RMI_Registry_Port> <Gateway_IP_Address> <ISB_Machine_IP1> [...<ISB_Machine_IPn>]
+     * java Gateway RMI_Registry_Port Gateway_IP_Address> ISB_Machine_IP1 [...ISB_Machine_IPn]
      * 
      * Example:
      * java Gateway 1099 192.168.1.2 192.168.1.3 192.168.1.4
