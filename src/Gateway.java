@@ -19,6 +19,9 @@ import java.util.stream.Collectors;
 public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     private ConcurrentLinkedQueue<String> urlQueue; // Queue de URLs
+
+    private ConcurrentHashMap<String, Boolean> urlsSeen; // Para rastrear URLs já processadas ou na fila
+
     
     private List<BarrelData> barrels; // List of barrel stubs with their IDs
 
@@ -36,6 +39,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         super();
         this.isbMachineIps = isbMachineIps; // Inicializar com IPs fornecidos
         urlQueue = new ConcurrentLinkedQueue<>();
+        urlsSeen = new ConcurrentHashMap<>(); // Inicializa o ConcurrentHashMap para rastrear URLs
         barrels = new ArrayList<>();
         discoverBarrels(); // Descobrir barris nos IPs fornecidos
         startPeriodicDiscovery();
@@ -46,18 +50,17 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     
 
     @Override
-    public synchronized void remoteSubmitURL(String url) throws RemoteException {
-        // Meter o URL na queue
-        boolean isAdded = urlQueue.offer(url);
-        if (isAdded) {
-            notifyDownloader(); // Notify downloader threads
-            System.out.println("URL enqueued: " + url);
-            System.out.println("DEPOIS DE ADICIONAR");
-            printQueueContent();
-
+    public synchronized String remoteSubmitURL(String url) throws RemoteException {
+        if(urlsSeen.putIfAbsent(url, Boolean.TRUE) == null) {
+            boolean isAdded = urlQueue.offer(url);
+            if (isAdded) {
+                notifyDownloader();
+                return "URL enqueued: " + url; // Retornar status de sucesso
+            } else {
+                return "Failed to enqueue URL: " + url; // Retornar falha ao enfileirar
+            }
         } else {
-            // print de debugging
-            System.err.println("Failed to enqueue URL: " + url);
+            return "URL already seen, skipping: " + url; // Retornar que a URL já foi vista
         }
     }
 

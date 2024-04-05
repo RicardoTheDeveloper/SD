@@ -3,7 +3,7 @@ package src;
 import java.rmi.*;
 
 public interface GatewayInterface extends Remote {
-    void remoteSubmitURL(String url) throws  java.rmi.RemoteException;
+    String remoteSubmitURL(String url) throws  java.rmi.RemoteException;
     public String fetchNextUrl() throws java.rmi.RemoteException;
 
     void remoteRecursiveIndexUrls() throws RemoteException;
