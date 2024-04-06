@@ -81,4 +81,8 @@ public interface GatewayInterface extends Remote {
      * @throws RemoteException If a remote invocation error occurs.
      */
     void notifyBarrelInactive(String barrelID) throws RemoteException;
+
+
+
+    public void markUrlAsProcessed(String url) throws RemoteException;
 }

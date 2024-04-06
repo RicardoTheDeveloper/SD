@@ -1,4 +1,5 @@
 package src;
+import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -19,6 +20,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+import java.net.SocketTimeoutException;
 
 /**
  * The `Downloader` class implements the `Runnable` interface and represents a downloader
@@ -49,6 +51,10 @@ public class Downloader implements Runnable {
     private static final int MAX_UDP_PACKET_SIZE = 65507;
     private int nackPort;
     private final Map<String, byte[][]> originalDataChunks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> terminationMessagesReceived = new ConcurrentHashMap<>();
+    private volatile boolean shouldTerminate = false;
+
+    
 
     /**
      * Constructs an instance of Downloader.
@@ -200,14 +206,12 @@ public class Downloader implements Runnable {
                     }
                     
                     else if (receivedObject instanceof TerminationMessage) {
-
                         TerminationMessage terminationMessage = (TerminationMessage) receivedObject;
-
                         if (terminationMessage.getThreadId() == this.threadId) {
-                            System.out.println("Termination message received for thread " + this.threadId);
-                            
+                            // Set the flag to true to indicate that this thread should stop sending chunks
+                            shouldTerminate = true;
+                            System.out.println("Termination message received for thread ID: " + this.threadId);
                         }
-
                     }
                      
                     
@@ -245,6 +249,10 @@ public class Downloader implements Runnable {
      * detailed with a stack trace for easier debugging.
     */
     private void resendChunk(Integer chunkIndex, String messageId, byte[] chunkData) {
+        if (shouldTerminate) {
+            System.out.println("Thread ID " + this.threadId + " is terminating. Not resending chunk " + chunkIndex);
+            return; // Early return to avoid resending the chunk
+        }
         try {
             
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -293,31 +301,32 @@ public class Downloader implements Runnable {
      * @param gateway the gateway interface used to fetch URLs and add URLs to the queue
      */
     public void handleIndexCommand(GatewayInterface gateway) {
-
         try {
-
             String currentUrl = gateway.fetchNextUrl();
-
+    
             if (currentUrl != null && !currentUrl.isEmpty()) {
-
-                Document doc = Jsoup.connect(currentUrl).get();
+                try{
+                    Document doc = Jsoup.connect(currentUrl)
+                                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
+                                    .timeout(10 * 1000) // 10 seconds
+                                    .get();
                 String title = doc.title();
                 String snippet = extractSnippet(doc);
                 Set<String> outboundLinks = new HashSet<>();
                 Set<String> uniqueWords = new HashSet<>();
-
+    
                 Consumer<String> addWord = word -> {
                     word = word.toLowerCase().replaceAll("[^a-z]", "");
                     if (!word.isEmpty() && !word.equals("www") && !word.equals("com")) {
                         uniqueWords.add(word);
                     }
                 };
-
-                String[] titleWords = title.split("[\\s+.]+");
+    
+                String[] titleWords = title.split("\\s+");
                 for (String word : titleWords) {
                     addWord.accept(word);
                 }
-
+    
                 Elements links = doc.select("a[href]");
                 for (Element link : links) {
                     String foundUrl = link.absUrl("href");
@@ -326,23 +335,45 @@ public class Downloader implements Runnable {
                         gateway.addUrlToQueue(foundUrl);
                     }
                 }
-
-                Elements paragraphs = doc.select("p");
-                for (Element paragraph : paragraphs) {
-                    String[] words = paragraph.text().split("\\s+");
-                    for (String word : words) {
-                        addWord.accept(word);
-                    }
+    
+                // Process all text in the body of the document
+                String bodyText = doc.body().text();
+                String[] bodyWords = bodyText.split("\\s+");
+                for (String word : bodyWords) {
+                    addWord.accept(word);
                 }
-
+    
+                gateway.markUrlAsProcessed(currentUrl);
+    
                 PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords);
                 pageInfo.setOutboundLinks(outboundLinks);
                 sendMulticastMessage(pageInfo);
+
+                }
+
+                catch (HttpStatusException e) {
+                System.err.println("HTTP Status Exception for URL: " + currentUrl + " - " + e.getMessage());
+                // Optionally, you can mark this URL as processed or invalid in your gateway.
+                gateway.markUrlAsProcessed(currentUrl); // or another method to handle invalid URLs
+                return; // Skip further processing for this URL
             }
-        } catch (IOException e) {
+
+             catch (SocketTimeoutException e) {
+                System.err.println("Timeout while fetching URL: " + currentUrl + " - " + e.getMessage());
+                // Handle timeout specific logic if needed
+            }
+                
+            }
+
+            
+        }
+        
+        
+        catch (IOException e) {
             e.printStackTrace();
         }
     }
+    
 
     /**
      * Executes the main logic of the Downloader thread.
@@ -357,7 +388,6 @@ public class Downloader implements Runnable {
      */
     @Override
     public void run() {
-        
         Thread listenerThread = new Thread(this::listenForNackAndTerminationMessages);
         listenerThread.start();
 
@@ -368,6 +398,12 @@ public class Downloader implements Runnable {
                 synchronized (sharedCounter) {
                     while (sharedCounter.get() % totalThreads != threadId) {
                         sharedCounter.wait();
+                    }
+
+                    if (shouldTerminate) {
+                        // Reset the state and continue in the loop
+                        shouldTerminate = false;
+                        continue; // Skip the current iteration and go back to waiting for new URLs
                     }
 
                     gateway.waitForUrl();
@@ -387,6 +423,7 @@ public class Downloader implements Runnable {
             e.printStackTrace();
         }
     }
+
 
     /**
      * The main method is the entry point of the Downloader program.

@@ -50,6 +50,9 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     /** List of IP addresses for the Index Storage Barrels (ISB) machines. */
     private List<String> isbMachineIps;
 
+    // This map holds URLs that are currently being processed.
+    private ConcurrentHashMap<String, Boolean> urlsInProcess;
+
     /**
      * Creates a Gateway object that initializes with a list of ISB machine IP addresses.
      * It sets up the necessary data structures and starts the periodic discovery of barrels.
@@ -67,6 +70,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         barrelStatus = new ConcurrentHashMap<>();
         barrelResponseTimes = new ConcurrentHashMap<>();
         scheduler = Executors.newScheduledThreadPool(1);
+
+        urlsInProcess = new ConcurrentHashMap<>();
         
         discoverBarrels();
         startPeriodicDiscovery();
@@ -80,17 +85,19 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @throws RemoteException if a networking error occurs.
      */
     @Override
-    public synchronized String remoteSubmitURL(String url) throws RemoteException {
-        if(urlsSeen.putIfAbsent(url, Boolean.TRUE) == null) {
-            boolean isAdded = urlQueue.offer(url);
-            if (isAdded) {
-                notifyDownloader();
-                return "URL enqueued: " + url;
+    public String remoteSubmitURL(String url) throws RemoteException {
+        synchronized (this) { 
+            if (urlsSeen.putIfAbsent(url, Boolean.TRUE) == null) {
+                boolean isAdded = urlQueue.offer(url);
+                if (isAdded) {
+                    notifyDownloader();
+                    return "URL enqueued: " + url;
+                } else {
+                    return "Failed to enqueue URL: " + url;
+                }
             } else {
-                return "Failed to enqueue URL: " + url;
+                return "URL already seen, skipping: " + url;
             }
-        } else {
-            return "URL already seen, skipping: " + url;
         }
     }
 
@@ -101,13 +108,22 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @throws RemoteException if a networking error occurs.
      */
     @Override
-    public synchronized String fetchNextUrl() throws RemoteException {
+    public String fetchNextUrl() throws RemoteException {
         synchronized(urlQueue) {
-            String url = urlQueue.poll();
-            System.out.println("DEPOIS DE DAR FETCH");
-            printQueueContent();
-            return url;
+            String url = urlQueue.peek(); // Get but do not remove the head of the queue
+            if (url != null && !urlsInProcess.containsKey(url)) {
+                urlsInProcess.put(url, Boolean.TRUE);
+                urlQueue.poll(); // Actually remove the head of the queue
+                return url;
+            }
+            return null; // or throw a custom exception to signify empty or all in process
         }
+    }
+
+    @Override
+    public void markUrlAsProcessed(String url) {
+        urlsInProcess.remove(url);
+        // Optionally, add to a "completed" list to prevent re-processing in future.
     }
 
     
@@ -211,21 +227,24 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
  * @throws RemoteException if a networking error occurs.
  */
     @Override
-    public synchronized void addUrlToQueue(String url) throws RemoteException {
-        if (!urlQueue.contains(url)) {
-            boolean isAdded = urlQueue.offer(url);
-            if (isAdded) {
-                notifyDownloader(); // Notify downloader threads
-                System.out.println("URL added to queue: " + url);
+    public void addUrlToQueue(String url) throws RemoteException {
+        synchronized (this) { // Lock on the instance of Gateway
+            if (!urlQueue.contains(url)) {
+                boolean isAdded = urlQueue.offer(url);
+                if (isAdded) {
+                    notifyDownloader(); // Notify downloader threads
+                    System.out.println("URL added to queue: " + url);
+                } else {
+                    // Debug print in case of failure
+                    System.err.println("Failed to add URL to queue: " + url);
+                }
             } else {
-                // Debug print in case of failure
-                System.err.println("Failed to add URL to queue: " + url);
+                // Debug print if the URL is already in the queue
+                System.out.println("URL already in queue, skipping: " + url);
             }
-        } else {
-            // Debug print if the URL is already in the queue
-            System.out.println("URL already in queue, skipping: " + url);
         }
     }
+
 
 
     /**
