@@ -16,6 +16,11 @@ Nota: A ordem de execução é importante. Primeiro deve ser executada a Gateway
 
 5.2--->Para correr o Index Storage Barrel: java -cp ".;lib\*;src" IndexStorageBarrel <id> <multicast-address> <multicast-port> <rmi-registry-port> <ip host> <ip other machine> <gateway IP> <gateway RMI port>
 
-5.3--->Para correr o Downloader: java -cp "bin;lib/*" Downloader <nackPort> <gatewayIP> <registryPort>
+5.3--->Para correr o Downloader: java -cp "bin;lib/*" Downloader <nackPort> <gatewayIP> <registryPort> <hostIP>
 
 5.4--->Para correr o cliente: java -cp "bin;lib/*" RMIClient <Server_IP> <RMI_Registry_Port>
+
+Nota: As portas de escuta para os ISB estão reservadas entre 1100 e 1105. O grupo multicast
+ foi definido hard coded para 239.255.255.250 e a porta multicast para 4446.
+ Devido a problemas de conexão multicast, foi necessário usar a ferramenta TierZero, e definimos os valores com base nisso.
+    
