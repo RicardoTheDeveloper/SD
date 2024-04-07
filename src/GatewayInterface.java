@@ -1,6 +1,7 @@
 package src;
 
 import java.rmi.*;
+import java.util.*;
 
 /**
  * Remote interface for the Gateway server in a distributed system.
@@ -34,7 +35,7 @@ public interface GatewayInterface extends Remote {
      * @return A string containing search results.
      * @throws RemoteException If a remote invocation error occurs.
      */
-    String remoteSearchForTerms(String[] terms) throws RemoteException;
+    List<PageInfo> remoteSearchForTerms(String[] terms) throws RemoteException;
 
     /**
      * Retrieves the list of inbound links pointing to a specific URL.

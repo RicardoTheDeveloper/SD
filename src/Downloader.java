@@ -45,7 +45,7 @@ public class Downloader implements Runnable {
 
     private static final AtomicInteger sharedCounter = new AtomicInteger(0);
     private final int threadId;
-    private static int totalThreads = 100;
+    private static int totalThreads = 1000;
     private String multicastAddress = "224.3.2.1";
     private int port = 4321;
     private GatewayInterface gateway;
@@ -459,7 +459,7 @@ public class Downloader implements Runnable {
             Registry registry = LocateRegistry.getRegistry(gatewayIP, registryPort);
             GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
 
-            int numberOfDownloaders = 100;
+            int numberOfDownloaders = 1000;
             for (int i = 0; i < numberOfDownloaders; i++) {
                 int threadNackPort = baseNackPort + i;
                 Downloader downloader = new Downloader(gateway, i, threadNackPort);

@@ -150,30 +150,34 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @throws RemoteException if a networking error occurs.
      */
     @Override
-    public String remoteSearchForTerms(String[] terms) throws RemoteException {
+    public List<PageInfo> remoteSearchForTerms(String[] terms) throws RemoteException {
         try {
             if (terms == null || terms.length == 0) {
-                return "No search terms provided.";
+                System.out.println("No search terms provided");
+                return null;
             }
 
-            System.out.println("|UPDATE| Search terms received: " + Arrays.toString(terms));
+            System.out.println("Search terms received: " + Arrays.toString(terms));
 
             BarrelData barrelData = getNextBarrel();
             if (barrelData == null) {
-                return "No Index Storage Barrels are available.";
+                System.out.println("No Index Storage Barrels are available.");
+                return null;
             }
             IndexStorageBarrelInterface barrelStub = barrelData.stub;
 
-            String result = barrelStub.searchPagesWithTerms(terms);
+            List<PageInfo> result = barrelStub.searchPagesWithTerms(terms);
 
             return result;
         } catch (ArrayIndexOutOfBoundsException ex) {
             ex.printStackTrace();
-            return "Search failed due to an out-of-bounds access.";
+            System.out.println("Search failed due to an out-of-bounds access.");
+            return null;
         } catch (Exception e) {
             System.err.println("Error in remoteSearchForTerms: " + e.getMessage());
             e.printStackTrace();
-            return "Search failed due to an unexpected error.";
+            System.out.println("Search failed due to an unexpected error.");
+            return null;
         }
     }
 
