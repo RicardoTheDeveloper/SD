@@ -89,8 +89,9 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         this.localIpAddress = localIpAddress;
         this.remoteIpAddress = remoteIpAddress;
         this.group = InetAddress.getByName(multicastAddress);
-        this.socket = new MulticastSocket(this.port);
-        this.socket.joinGroup(this.group);
+        this.socket = new MulticastSocket(port);
+        this.socket.joinGroup(group);
+        
         this.executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         loadState();
         synchronizeData();
@@ -267,7 +268,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      * @throws RemoteException if a remote exception occurs during the search
      */
     @Override
-    public String searchPagesWithTerms(String[] terms) throws RemoteException {
+    public List<PageInfo> searchPagesWithTerms(String[] terms) throws RemoteException {
         
         System.out.println("Entered searchPagesWithTerms");
         Map<PageInfo, Integer> pageInfoInboundLinkCountMap = new HashMap<>();
@@ -279,7 +280,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             String normalizedTerm = normalizeString(term);
             Set<String> pagesWithTerm = invertedIndex.get(normalizedTerm);
             if (pagesWithTerm == null || pagesWithTerm.isEmpty()) {
-                return "No results found for the given terms.";
+                return null;
             }
             if (isFirstTerm) {
                 pagesWithAllTerms.addAll(pagesWithTerm);
@@ -305,30 +306,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         long searchTime = System.nanoTime() - startTime;
         responseTimes.add(searchTime);
 
-        StringBuilder resultBuilder = new StringBuilder();
-        final int resultsPerGroup = 10;
-        int groupNumber = 1;
-        int currentGroupIndex = 0;
-
-        for (PageInfo pageInfo : pageInfoList) {
-            if (currentGroupIndex % resultsPerGroup == 0) {
-                if (currentGroupIndex > 0) {
-                    resultBuilder.append("\n-- End of Group ").append(groupNumber - 1).append(" --\n\n");
-                }
-                resultBuilder.append("-- Group ").append(groupNumber).append(" --\n");
-                groupNumber++;
-            }
-            resultBuilder.append("Title: ").append(pageInfo.getTitle())
-                        .append("\nURL: ").append(pageInfo.getUrl())
-                        .append("\nSnippet: ").append(pageInfo.getSnippet())
-                        .append("\nInbound Links: ").append(pageInfo.getInboundLinks().size())
-                        .append("\n---------------------------------------\n");
-            currentGroupIndex++;
-        }
-
-        if (currentGroupIndex % resultsPerGroup != 0) {
-            resultBuilder.append("\n-- End of Group ").append(groupNumber - 1).append(" --\n");
-        }
+        
 
         for (String term : terms) {
             searchFrequencies.merge(term, 1, Integer::sum);
@@ -336,7 +314,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
         saveState();
 
-        return resultBuilder.toString();
+        return pageInfoList;
     }
 
 

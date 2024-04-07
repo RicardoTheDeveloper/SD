@@ -4,6 +4,8 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+
+import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.*;
@@ -45,8 +47,8 @@ public class Downloader implements Runnable {
     private static final AtomicInteger sharedCounter = new AtomicInteger(0);
     private final int threadId;
     private static int totalThreads = 100;
-    private String multicastAddress = "224.3.2.1";
-    private int port = 4321;
+    private String multicastAddress = "239.255.255.250";
+    private int port = 4446;
     private GatewayInterface gateway;
     private static final int MAX_UDP_PACKET_SIZE = 65507;
     private int nackPort;
@@ -301,8 +303,12 @@ public class Downloader implements Runnable {
      * @param gateway the gateway interface used to fetch URLs and add URLs to the queue
      */
     public void handleIndexCommand(GatewayInterface gateway) {
+        
         try {
-            String currentUrl = gateway.fetchNextUrl();
+            URLTask currentTask = gateway.fetchNextUrl();
+            String currentUrl = currentTask.getUrl();
+            int currentPriority = currentTask.getPriority();
+            
     
             if (currentUrl != null && !currentUrl.isEmpty()) {
                 try{
@@ -332,7 +338,7 @@ public class Downloader implements Runnable {
                     String foundUrl = link.absUrl("href");
                     if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
                         outboundLinks.add(foundUrl);
-                        gateway.addUrlToQueue(foundUrl);
+                        gateway.addUrlToQueue(foundUrl,currentPriority+1);
                     }
                 }
     
@@ -350,6 +356,7 @@ public class Downloader implements Runnable {
                 sendMulticastMessage(pageInfo);
 
                 }
+                
 
                 catch (HttpStatusException e) {
                 System.err.println("HTTP Status Exception for URL: " + currentUrl + " - " + e.getMessage());
@@ -367,8 +374,12 @@ public class Downloader implements Runnable {
 
             
         }
-        
-        
+        catch (RemoteException e) {
+        System.err.println("Remote exception while fetching URL: " + e.getMessage());
+        e.printStackTrace();
+        // Handle the RemoteException appropriately
+    }
+
         catch (IOException e) {
             e.printStackTrace();
         }

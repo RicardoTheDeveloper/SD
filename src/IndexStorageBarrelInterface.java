@@ -2,6 +2,7 @@ package src;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,7 +20,7 @@ public interface IndexStorageBarrelInterface extends Remote {
      * @return a string representing the search results
      * @throws RemoteException if a remote communication error occurs
      */
-    String searchPagesWithTerms(String[] terms) throws RemoteException;
+    public List<PageInfo>  searchPagesWithTerms(String[] terms) throws RemoteException;
     
     /**
      * Retrieves the inbound links for a given URL.

@@ -2,11 +2,15 @@ package src;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.net.ConnectException;
 
 /**
  * The RMIClient class represents a client program that connects to the RMI Registry and interacts with the system.
@@ -28,6 +32,10 @@ public class RMIClient {
      * @param args the command line arguments containing the server address and port number
      */
     public static void main(String[] args) {
+        Scanner scanner = null;  // Declare scanner here to have a wider scope
+
+        Registry registry = null;
+        GatewayInterface stub = null;
 
         if (args.length < 2) {
             System.err.println("Error: You must provide the server address and port number as command line arguments.");
@@ -39,12 +47,20 @@ public class RMIClient {
         int serverPort = Integer.parseInt(args[1]);
 
         try {
+            serverPort = Integer.parseInt(args[1]);
+        } catch (NumberFormatException e) {
+            System.err.println("The server port must be an integer.");
+            System.exit(1);
+            return;
+        }
+
+        try {
 
             System.out.println("Connecting to RMI Registry at " + serverAddress + ":" + serverPort);
-            Registry registry = LocateRegistry.getRegistry(serverAddress, serverPort);
-            GatewayInterface stub = (GatewayInterface) registry.lookup("GatewayService");
+            registry = LocateRegistry.getRegistry(serverAddress, serverPort);
+            stub = (GatewayInterface) registry.lookup("GatewayService");
 
-            Scanner scanner = new Scanner(System.in, "windows-1252"); 
+            scanner = new Scanner(System.in, "windows-1252"); 
 
             while (true) {
                 
@@ -79,9 +95,66 @@ public class RMIClient {
                         System.out.println("Invalid choice. Please enter a number between 0 and 6.");
                 }
             }
-        } catch (Exception e) {
-            System.err.println("Client exception: " + e.toString());
-            e.printStackTrace();
+        }
+
+        catch (ConnectException e) {
+        System.err.println("Connection refused to host: " + serverAddress + "; The gateway is unavailable.");
+        System.exit(1);
+    } catch (RemoteException e) {
+        System.err.println("RemoteException: Unable to connect to Gateway");
+        System.exit(1);
+    } catch (NotBoundException e) {
+        System.err.println("GatewayService is not bound in the registry.");
+        System.exit(1);
+    } catch (Exception e) {
+        System.err.println("An unexpected error occurred: " + e.toString());
+        e.printStackTrace();
+        System.exit(1);
+    } finally {
+            if (scanner != null) {
+                scanner.close();
+            }
+        }
+    }
+
+
+
+
+    private static void displaySearchResults(List<PageInfo> results, Scanner scanner) {
+        if (results.isEmpty()) {
+            System.out.println("No results found.");
+            return;
+        }
+        
+        int pageSize = 10; // Number of results per page
+        int currentPage = 0;
+        boolean exit = false;
+        
+        while (!exit) {
+            int start = currentPage * pageSize;
+            int end = Math.min(start + pageSize, results.size());
+            List<PageInfo> page = results.subList(start, end);
+            
+            for (PageInfo info : page) {
+                System.out.println("Title: " + info.getTitle());
+                System.out.println("URL: " + info.getUrl());
+                System.out.println("Snippet: " + info.getSnippet());
+                System.out.println("Inbound links: " + info.getInboundLinks().size());
+                System.out.println("---------------------------------------");
+            }
+            
+            if (end == results.size()) {
+                System.out.println("End of results.");
+                exit = true;
+            } else {
+                System.out.println("Press n for next page, any other key to exit.");
+                String input = scanner.nextLine();
+                if (!"n".equalsIgnoreCase(input)) {
+                    exit = true;
+                } else {
+                    currentPage++;
+                }
+            }
         }
     }
     
@@ -98,10 +171,22 @@ public class RMIClient {
             String url = scanner.nextLine();
             stub.remoteSubmitURL(url);
             System.out.println("URL submitted for indexing: " + url);
-        } catch (RemoteException e) {
-            System.err.println("Remote exception when trying to submit URL for indexing.");
+        }
+        catch (RemoteException e) {
+            if (e.getCause() instanceof ConnectException) {
+                System.out.println("Gateway is unavailable. Please try again later.");
+                System.exit(1);
+            } else {
+                System.err.println("Remote exception when trying to submit URL for indexing.");
+                System.exit(1);
+            }
+        }
+        catch (Exception e) {
+            System.err.println("An unexpected error occurred.");
             e.printStackTrace();
+            System.exit(1);
         } 
+        
     }
 
     /**
@@ -113,17 +198,46 @@ public class RMIClient {
     private static void handleSearchWithSpecificTerms(Scanner scanner, GatewayInterface stub) {
         try {
             System.out.print("Enter search terms (separated by spaces): ");
-                String searchQuery = scanner.nextLine();
-                String[] terms = searchQuery.split("\\s+");
-                System.out.println("Term sent for search");
-                for (String term : terms) {
-                    System.out.println("Term: " + term);
-                }
-                String searchResults = stub.remoteSearchForTerms(terms);
-                System.out.println("Search Results: \n" + searchResults);
-        } catch (RemoteException e) {
-            System.err.println("Error processing search request.");
-            e.printStackTrace();
+            String searchQuery = scanner.nextLine();
+            String[] terms = searchQuery.split("\\s+");
+            List<PageInfo> results = stub.remoteSearchForTerms(terms); // Updated to reflect new return type
+            if(results==null){
+                System.out.println("No matches found");
+                return;
+
+            }
+            displaySearchResults(results, scanner); // Use the new display method for paginated results
+    
+        }
+        catch (NoSuchElementException e) {
+        System.out.println("Input stream closed. Exiting...");
+        }
+        catch (RemoteException e) {
+            if (e.getCause() instanceof ConnectException) {
+                System.out.println("Gateway is unavailable. Please try again later.");
+                // closeScanner(scanner); // Assuming you have this method implemented to close the scanner.
+                System.exit(1); // Exit the program
+            } else {
+                System.err.println("Remote exception when trying to submit URL for indexing.");
+                System.exit(1);
+            }
+        }
+        
+        catch (IllegalStateException e) {
+            System.err.println("Scanner has been closed unexpectedly: " + e.getMessage());
+            System.exit(1); // Exit the program or handle it according to your needs
+        }
+        finally {
+        if (scanner != null) {
+            scanner.close();
+        }
+    }
+    
+    }
+
+    private static void closeScanner(Scanner scanner) {
+        if (scanner != null) {
+            scanner.close();
         }
     }
 

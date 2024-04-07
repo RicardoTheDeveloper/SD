@@ -1,6 +1,7 @@
 package src;
 
 import java.rmi.*;
+import java.util.List;
 
 /**
  * Remote interface for the Gateway server in a distributed system.
@@ -23,7 +24,7 @@ public interface GatewayInterface extends Remote {
      * @return The next URL in the queue, or null if the queue is empty.
      * @throws RemoteException If a remote invocation error occurs.
      */
-    String fetchNextUrl() throws RemoteException;
+    URLTask fetchNextUrl() throws RemoteException;
 
     /**
      * Searches for web pages that contain the given terms.
@@ -32,7 +33,7 @@ public interface GatewayInterface extends Remote {
      * @return A string containing search results.
      * @throws RemoteException If a remote invocation error occurs.
      */
-    String remoteSearchForTerms(String[] terms) throws RemoteException;
+    List<PageInfo>remoteSearchForTerms(String[] terms) throws RemoteException;
 
     /**
      * Retrieves the list of inbound links pointing to a specific URL.
@@ -64,7 +65,7 @@ public interface GatewayInterface extends Remote {
      * @param url The URL to add to the queue.
      * @throws RemoteException If a remote invocation error occurs.
      */
-    void addUrlToQueue(String url) throws RemoteException;
+    void addUrlToQueue(String url, int priority) throws RemoteException;
 
     /**
      * Retrieves the current status of the system.

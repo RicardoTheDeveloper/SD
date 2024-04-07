@@ -15,6 +15,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
 /**
  * The Gateway class serves as a central coordinator in a distributed indexing system.
@@ -23,8 +25,7 @@ import java.util.stream.Collectors;
  */
 public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
-    /** Queue of URLs to be indexed. */
-    private ConcurrentLinkedQueue<String> urlQueue;
+    private BlockingQueue<URLTask> urlQueue;
 
     /** Tracks URLs that have been processed or are queued to prevent duplication. */
     private ConcurrentHashMap<String, Boolean> urlsSeen;
@@ -53,6 +54,14 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     // This map holds URLs that are currently being processed.
     private ConcurrentHashMap<String, Boolean> urlsInProcess;
 
+
+    private ConcurrentHashMap<String, Integer> urlOrigins; // New field to track origins of URLs
+
+
+
+
+    
+
     /**
      * Creates a Gateway object that initializes with a list of ISB machine IP addresses.
      * It sets up the necessary data structures and starts the periodic discovery of barrels.
@@ -63,7 +72,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     protected Gateway(List<String> isbMachineIps) throws RemoteException {
         super();
         this.isbMachineIps = isbMachineIps;
-        urlQueue = new ConcurrentLinkedQueue<>();
+        this.urlQueue = new PriorityBlockingQueue<>();
         urlsSeen = new ConcurrentHashMap<>();
         barrels = new ArrayList<>();
         searchFrequencies = new ConcurrentHashMap<>();
@@ -72,6 +81,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         scheduler = Executors.newScheduledThreadPool(1);
 
         urlsInProcess = new ConcurrentHashMap<>();
+        // Inside your Gateway constructor
+        this.urlOrigins = new ConcurrentHashMap<>();
         
         discoverBarrels();
         startPeriodicDiscovery();
@@ -86,17 +97,18 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     @Override
     public String remoteSubmitURL(String url) throws RemoteException {
-        synchronized (this) { 
+        synchronized (this) {
             if (urlsSeen.putIfAbsent(url, Boolean.TRUE) == null) {
-                boolean isAdded = urlQueue.offer(url);
+                boolean isAdded = urlQueue.offer(new URLTask(url, 0)); // Priority 0 for user URLs
                 if (isAdded) {
                     notifyDownloader();
-                    return "URL enqueued: " + url;
+                    urlOrigins.put(url, 0); // Mark as user-submitted
+                    return "User-submitted URL enqueued with high priority: " + url;
                 } else {
-                    return "Failed to enqueue URL: " + url;
+                    return "Failed to enqueue user URL: " + url;
                 }
             } else {
-                return "URL already seen, skipping: " + url;
+                return "User URL already seen, skipping: " + url;
             }
         }
     }
@@ -108,15 +120,15 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @throws RemoteException if a networking error occurs.
      */
     @Override
-    public String fetchNextUrl() throws RemoteException {
-        synchronized(urlQueue) {
-            String url = urlQueue.peek(); // Get but do not remove the head of the queue
-            if (url != null && !urlsInProcess.containsKey(url)) {
+    public URLTask fetchNextUrl() throws RemoteException {
+        synchronized (urlQueue) {
+            URLTask task = urlQueue.poll(); // Retrieves and removes the head of the queue
+            if (task != null) {
+                String url = task.getUrl();
                 urlsInProcess.put(url, Boolean.TRUE);
-                urlQueue.poll(); // Actually remove the head of the queue
-                return url;
+                return task;
             }
-            return null; // or throw a custom exception to signify empty or all in process
+            return null;
         }
     }
 
@@ -136,30 +148,34 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @throws RemoteException if a networking error occurs.
      */
     @Override
-    public String remoteSearchForTerms(String[] terms) throws RemoteException {
+    public List<PageInfo> remoteSearchForTerms(String[] terms) throws RemoteException {
         try {
             if (terms == null || terms.length == 0) {
-                return "No search terms provided.";
+                System.out.println("No search terms provided");
+                return null;
             }
 
-            System.out.println("|UPDATE| Search terms received: " + Arrays.toString(terms));
+            System.out.println("Search terms received: " + Arrays.toString(terms));
 
             BarrelData barrelData = getNextBarrel();
             if (barrelData == null) {
-                return "No Index Storage Barrels are available.";
+                System.out.println("No Index Storage Barrels are available.");
+                return null;
             }
             IndexStorageBarrelInterface barrelStub = barrelData.stub;
 
-            String result = barrelStub.searchPagesWithTerms(terms);
+            List<PageInfo> result = barrelStub.searchPagesWithTerms(terms);
 
             return result;
         } catch (ArrayIndexOutOfBoundsException ex) {
             ex.printStackTrace();
-            return "Search failed due to an out-of-bounds access.";
+            System.out.println("Search failed due to an out-of-bounds access.");
+            return null;
         } catch (Exception e) {
             System.err.println("Error in remoteSearchForTerms: " + e.getMessage());
             e.printStackTrace();
-            return "Search failed due to an unexpected error.";
+            System.out.println("Search failed due to an unexpected error.");
+            return null;
         }
     }
 
@@ -227,23 +243,22 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
  * @throws RemoteException if a networking error occurs.
  */
     @Override
-    public void addUrlToQueue(String url) throws RemoteException {
-        synchronized (this) { // Lock on the instance of Gateway
-            if (!urlQueue.contains(url)) {
-                boolean isAdded = urlQueue.offer(url);
-                if (isAdded) {
-                    notifyDownloader(); // Notify downloader threads
-                    System.out.println("URL added to queue: " + url);
-                } else {
-                    // Debug print in case of failure
-                    System.err.println("Failed to add URL to queue: " + url);
-                }
+    public void addUrlToQueue(String url, int priority) throws RemoteException {
+    synchronized (this) {
+        if (!urlsSeen.containsKey(url)) {
+            boolean isAdded = urlQueue.offer(new URLTask(url, priority));
+            if (isAdded) {
+                notifyDownloader();
+                System.out.println("Outbound link added to queue with priority " + priority + ": " + url);
             } else {
-                // Debug print if the URL is already in the queue
-                System.out.println("URL already in queue, skipping: " + url);
+                System.err.println("Failed to add outbound link to queue: " + url);
             }
+            urlsSeen.put(url, Boolean.TRUE);
+        } else {
+            System.out.println("Outbound link already seen, skipping: " + url);
         }
     }
+}
 
 
 
@@ -307,8 +322,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     public void printQueueContent() {
         System.out.println("Current URLs in the Queue:");
-        for (String url : urlQueue) {
-            System.out.println(url);
+        for (URLTask task : urlQueue) {
+            System.out.println(task.getUrl() + " with priority " + task.getPriority());
         }
     }
 
