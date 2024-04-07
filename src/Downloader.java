@@ -55,7 +55,7 @@ public class Downloader implements Runnable {
     private final Map<String, byte[][]> originalDataChunks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> terminationMessagesReceived = new ConcurrentHashMap<>();
     private volatile boolean shouldTerminate = false;
-
+    private String hostIpAddress;
     
 
     /**
@@ -65,10 +65,11 @@ public class Downloader implements Runnable {
      * @param threadId  The identifier of the thread being created.
      * @param nackPort  The port number used for NACK (Not Acknowledged) communications.
     */
-    public Downloader(GatewayInterface gateway, int threadId, int nackPort) {
+    public Downloader(GatewayInterface gateway, int threadId, int nackPort,String hostIpAddress) {
         this.gateway = gateway;
         this.threadId = threadId;
         this.nackPort = nackPort;
+        this.hostIpAddress = hostIpAddress;
     }
 
     /**
@@ -125,7 +126,7 @@ public class Downloader implements Runnable {
                 byte[] compressedChunkData = compressedBaos.toByteArray();
                 chunks[i] = compressedChunkData;
 
-                MessageChunk chunk = new MessageChunk(i, totalChunks, compressedChunkData, messageId, this.nackPort, this.threadId);
+                MessageChunk chunk = new MessageChunk(i, totalChunks, compressedChunkData, messageId, this.nackPort, this.threadId,this.hostIpAddress);
 
                 ByteArrayOutputStream chunkBaos = new ByteArrayOutputStream();
                 try (ObjectOutputStream chunkOos = new ObjectOutputStream(chunkBaos)) {
@@ -197,7 +198,7 @@ public class Downloader implements Runnable {
                         if (originalData != null) {
                             for (Integer chunkIndex : missingChunks) {
                                 if (chunkIndex != null && chunkIndex >= 0 && chunkIndex < originalData.length) {
-                                    resendChunk(chunkIndex, messageId, originalData[chunkIndex]);
+                                    resendChunk(chunkIndex, messageId, originalData[chunkIndex], this.hostIpAddress);
                                 } else {
                                     System.err.println("Invalid chunk index or chunk data is null for index " + chunkIndex);
                                 }
@@ -210,7 +211,7 @@ public class Downloader implements Runnable {
                     else if (receivedObject instanceof TerminationMessage) {
                         TerminationMessage terminationMessage = (TerminationMessage) receivedObject;
                         if (terminationMessage.getThreadId() == this.threadId) {
-                            // Set the flag to true to indicate that this thread should stop sending chunks
+                            
                             shouldTerminate = true;
                             System.out.println("Termination message received for thread ID: " + this.threadId);
                         }
@@ -250,17 +251,17 @@ public class Downloader implements Runnable {
      * <p>Errors during serialization or sending process are caught, logged to the console, and
      * detailed with a stack trace for easier debugging.
     */
-    private void resendChunk(Integer chunkIndex, String messageId, byte[] chunkData) {
+    private void resendChunk(Integer chunkIndex, String messageId, byte[] chunkData, String downloaderIpAddress) {
         if (shouldTerminate) {
             System.out.println("Thread ID " + this.threadId + " is terminating. Not resending chunk " + chunkIndex);
-            return; // Early return to avoid resending the chunk
+            return;
         }
         try {
             
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
             try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
-                oos.writeObject(new MessageChunk(chunkIndex, originalDataChunks.get(messageId).length, chunkData, messageId, nackPort, threadId));
+                oos.writeObject(new MessageChunk(chunkIndex, originalDataChunks.get(messageId).length, chunkData, messageId, nackPort, threadId, downloaderIpAddress));
             }
 
             byte[] dataToSend = baos.toByteArray();
@@ -314,7 +315,7 @@ public class Downloader implements Runnable {
                 try{
                     Document doc = Jsoup.connect(currentUrl)
                                     .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
-                                    .timeout(10 * 1000) // 10 seconds
+                                    .timeout(10 * 1000)
                                     .get();
                 String title = doc.title();
                 String snippet = extractSnippet(doc);
@@ -342,7 +343,7 @@ public class Downloader implements Runnable {
                     }
                 }
     
-                // Process all text in the body of the document
+               
                 String bodyText = doc.body().text();
                 String[] bodyWords = bodyText.split("\\s+");
                 for (String word : bodyWords) {
@@ -360,14 +361,14 @@ public class Downloader implements Runnable {
 
                 catch (HttpStatusException e) {
                 System.err.println("HTTP Status Exception for URL: " + currentUrl + " - " + e.getMessage());
-                // Optionally, you can mark this URL as processed or invalid in your gateway.
-                gateway.markUrlAsProcessed(currentUrl); // or another method to handle invalid URLs
-                return; // Skip further processing for this URL
+                
+                gateway.markUrlAsProcessed(currentUrl);
+                return;
             }
 
              catch (SocketTimeoutException e) {
                 System.err.println("Timeout while fetching URL: " + currentUrl + " - " + e.getMessage());
-                // Handle timeout specific logic if needed
+               
             }
                 
             }
@@ -377,7 +378,7 @@ public class Downloader implements Runnable {
         catch (RemoteException e) {
         System.err.println("Remote exception while fetching URL: " + e.getMessage());
         e.printStackTrace();
-        // Handle the RemoteException appropriately
+        
     }
 
         catch (IOException e) {
@@ -412,9 +413,9 @@ public class Downloader implements Runnable {
                     }
 
                     if (shouldTerminate) {
-                        // Reset the state and continue in the loop
+                        
                         shouldTerminate = false;
-                        continue; // Skip the current iteration and go back to waiting for new URLs
+                        continue;
                     }
 
                     gateway.waitForUrl();
@@ -447,14 +448,15 @@ public class Downloader implements Runnable {
      */
     public static void main(String[] args) {
         try {
-            if (args.length < 3) {
-                System.err.println("Usage: java Downloader <nackPort> <gatewayIP> <registryPort>");
+            if (args.length < 4) {
+                System.err.println("Usage: java Downloader <nackPort> <gatewayIP> <registryPort> <hostIP>");
                 return;
             }
 
             int baseNackPort = Integer.parseInt(args[0]);
             String gatewayIP = args[1];
             int registryPort = Integer.parseInt(args[2]);
+            String hostIP = args[3]; 
 
             Registry registry = LocateRegistry.getRegistry(gatewayIP, registryPort);
             GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");
@@ -462,7 +464,7 @@ public class Downloader implements Runnable {
             int numberOfDownloaders = 100;
             for (int i = 0; i < numberOfDownloaders; i++) {
                 int threadNackPort = baseNackPort + i;
-                Downloader downloader = new Downloader(gateway, i, threadNackPort);
+                Downloader downloader = new Downloader(gateway, i, threadNackPort,hostIP);
                 new Thread(downloader).start();
             }
         } catch (Exception e) {

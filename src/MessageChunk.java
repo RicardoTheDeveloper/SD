@@ -13,9 +13,10 @@ public class MessageChunk implements Serializable {
     private int index;
     private int totalChunks;
     private byte[] chunkData;
-    private String messageId; // Identificador único para a mensagem
-    private int downloaderNackPort; // New field
-    private int threadID; 
+    private String messageId; 
+    private int downloaderNackPort; 
+    private int threadID;
+    private String downloaderIpAddress;
 
     /**
      * Constructs a new MessageChunk.
@@ -27,20 +28,21 @@ public class MessageChunk implements Serializable {
      * @param downloaderNackPort The port number for sending NACK messages.
      * @param threadID The identifier of the thread processing this chunk.
      */
-    public MessageChunk(int index, int totalChunks, byte[] chunkData, String messageId,int downloaderNackPort,int threadID) {
+    public MessageChunk(int index, int totalChunks, byte[] chunkData, String messageId,int downloaderNackPort,int threadID,String downloaderIpAddress) {
         this.index = index;
         this.totalChunks = totalChunks;
         this.chunkData = chunkData;
         this.messageId = messageId;
         this.downloaderNackPort = downloaderNackPort;
         this.threadID = threadID;
+        this.downloaderIpAddress = downloaderIpAddress;
     }
 
-    // Getters
     public int getIndex() { return index; }
     public int getTotalChunks() { return totalChunks; }
     public byte[] getChunkData() { return chunkData; }
-    public String getMessageId() { return messageId; } // Getter para o messageId
+    public String getMessageId() { return messageId; }
     public int getDownloaderNackPort() {return downloaderNackPort;}
     public int getThreadID() {return threadID;}
+    public String getDownloaderIpAddress() {return downloaderIpAddress;}
 }

@@ -84,6 +84,11 @@ public interface GatewayInterface extends Remote {
     void notifyBarrelInactive(String barrelID) throws RemoteException;
 
 
-
+    /**
+     * Marks the specified URL as processed.
+     *
+     * @param url the URL to mark as processed
+     * @throws RemoteException if a remote exception occurs
+     */
     public void markUrlAsProcessed(String url) throws RemoteException;
 }

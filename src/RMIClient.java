@@ -108,7 +108,6 @@ public class RMIClient {
         System.exit(1);
     } catch (Exception e) {
         System.err.println("An unexpected error occurred: " + e.toString());
-        e.printStackTrace();
         System.exit(1);
     } finally {
             if (scanner != null) {
@@ -120,13 +119,19 @@ public class RMIClient {
 
 
 
+    /**
+     * Displays the search results to the console.
+     * 
+     * @param results  the list of search results
+     * @param scanner  the scanner object for user input
+     */
     private static void displaySearchResults(List<PageInfo> results, Scanner scanner) {
         if (results.isEmpty()) {
             System.out.println("No results found.");
             return;
         }
         
-        int pageSize = 10; // Number of results per page
+        int pageSize = 10;
         int currentPage = 0;
         boolean exit = false;
         
@@ -183,7 +188,6 @@ public class RMIClient {
         }
         catch (Exception e) {
             System.err.println("An unexpected error occurred.");
-            e.printStackTrace();
             System.exit(1);
         } 
         
@@ -235,12 +239,6 @@ public class RMIClient {
     
     }
 
-    private static void closeScanner(Scanner scanner) {
-        if (scanner != null) {
-            scanner.close();
-        }
-    }
-
     /**
      * Handles the functionality to check for inbound links to a given URL.
      * 
@@ -255,7 +253,7 @@ public class RMIClient {
             System.out.println("Inbound links for " + url + ": \n" + inboundLinks);
         } catch (RemoteException e) {
             System.err.println("Remote exception when trying to get inbound links.");
-            e.printStackTrace();
+            System.exit(1); // Exit the program or handle it according to your needs
         }
     }
 
@@ -292,7 +290,7 @@ public class RMIClient {
                         lastSystemStatus = systemStatus;
                     }
                 } catch (RemoteException e) {
-
+                    System.exit(1);
                 }
                 try {
                     Thread.sleep(5000);

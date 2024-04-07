@@ -10,7 +10,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -58,10 +57,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     private ConcurrentHashMap<String, Integer> urlOrigins; // New field to track origins of URLs
 
 
-
-
-    
-
     /**
      * Creates a Gateway object that initializes with a list of ISB machine IP addresses.
      * It sets up the necessary data structures and starts the periodic discovery of barrels.
@@ -81,7 +76,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         scheduler = Executors.newScheduledThreadPool(1);
 
         urlsInProcess = new ConcurrentHashMap<>();
-        // Inside your Gateway constructor
         this.urlOrigins = new ConcurrentHashMap<>();
         
         discoverBarrels();
@@ -102,7 +96,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
                 boolean isAdded = urlQueue.offer(new URLTask(url, 0)); // Priority 0 for user URLs
                 if (isAdded) {
                     notifyDownloader();
-                    urlOrigins.put(url, 0); // Mark as user-submitted
+                    urlOrigins.put(url, 0);
                     return "User-submitted URL enqueued with high priority: " + url;
                 } else {
                     return "Failed to enqueue user URL: " + url;
@@ -122,7 +116,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     @Override
     public URLTask fetchNextUrl() throws RemoteException {
         synchronized (urlQueue) {
-            URLTask task = urlQueue.poll(); // Retrieves and removes the head of the queue
+            URLTask task = urlQueue.poll();
             if (task != null) {
                 String url = task.getUrl();
                 urlsInProcess.put(url, Boolean.TRUE);
@@ -135,7 +129,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     @Override
     public void markUrlAsProcessed(String url) {
         urlsInProcess.remove(url);
-        // Optionally, add to a "completed" list to prevent re-processing in future.
     }
 
     
@@ -279,16 +272,13 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         StringBuilder statusBuilder = new StringBuilder();
 
         statusBuilder.append("Top Searches Across All Barrels:\n");
-        // Aggregate the top searches across all barrels
         Map<String, Integer> globalSearchFrequencies = new HashMap<>();
         for (BarrelData barrel : barrels) {
             Map<String, Integer> barrelSearchFrequencies = barrel.stub.getSearchFrequencies();
-            // Combine frequencies from this barrel with the global frequencies
             barrelSearchFrequencies.forEach(
                 (term, frequency) -> globalSearchFrequencies.merge(term, frequency, Integer::sum)
             );
         }
-        // Now sort and get the top 10 searches globally
         List<String> topSearches = globalSearchFrequencies.entrySet().stream()
             .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
             .limit(10)
@@ -492,7 +482,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * If an exception occurs during the initialization or binding process, it will be printed to the standard error.
      */
     public static void main(String[] args) {
-        // Validate arguments: Expecting at least 3 arguments
         if (args.length < 3) {
             System.err.println("Error: You must provide the RMI Registry port number, the Gateway IP address, and at least one ISB machine IP address as command line arguments.");
             System.err.println("Usage: java Gateway <RMI_Registry_Port> <Gateway_IP_Address> <ISB_Machine_IP1> [...<ISB_Machine_IPn>]");
@@ -500,20 +489,18 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         }
 
         int registryPort = Integer.parseInt(args[0]);
-        String gatewayIP = args[1]; // Gateway IP address
+        String gatewayIP = args[1];
 
         System.setProperty("sun.rmi.transport.tcp.responseTimeout", "120000");
 
-        // Remaining arguments are the IPs of the ISB machines
         List<String> isbMachineIps = Arrays.asList(Arrays.copyOfRange(args, 2, args.length));
 
-        // Set the system property for RMI to use the Gateway IP address
         System.setProperty("java.rmi.server.hostname", gatewayIP);
         
         try {
             
             Gateway server = new Gateway(isbMachineIps);
-            Registry registry = LocateRegistry.createRegistry(registryPort); // Use the provided port for RMI registry
+            Registry registry = LocateRegistry.createRegistry(registryPort);
             registry.rebind("GatewayService", server);
             System.out.println("Gateway is ready on port " + registryPort + ".");
         } catch (Exception e) {

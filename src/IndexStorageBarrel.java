@@ -418,6 +418,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
                 Object obj = ois.readObject();
                 if (obj instanceof MessageChunk) {
                     MessageChunk chunk = (MessageChunk) obj;
+                    String downloaderIpAddress = chunk.getDownloaderIpAddress(); // Retrieve the IP address
 
                     byte[] decompressedData;
                     try (ByteArrayInputStream bais = new ByteArrayInputStream(chunk.getChunkData());
@@ -449,7 +450,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
                                     }
                                 }
                                 if (!missingChunks.isEmpty()) {
-                                    sendNackMessage(chunk.getMessageId(), missingChunks, chunk.getDownloaderNackPort());
+                                    sendNackMessage(chunk.getMessageId(), missingChunks, downloaderIpAddress, chunk.getDownloaderNackPort());
                                 }
                             }
                         }, 2, TimeUnit.SECONDS);
@@ -487,7 +488,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
                             updateInvertedIndex(pageInfo);
                             saveState();
 
-                            sendTerminationMessage(chunk.getThreadID(),chunk.getDownloaderNackPort());
+                            sendTerminationMessage(chunk.getThreadID(), downloaderIpAddress, chunk.getDownloaderNackPort());
                             
                         }
 
@@ -513,9 +514,9 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      * @param missingChunks     the set of missing chunks
      * @param downloaderNackPort   the port number of the downloader thread to send the NACK message to
      */
-    private void sendNackMessage(String messageId, Set<Integer> missingChunks, int downloaderNackPort) {
+    private void sendNackMessage(String messageId, Set<Integer> missingChunks, String downloaderIpAddress, int downloaderNackPort) {
         try {
-            InetAddress address = InetAddress.getByName("localhost");
+            InetAddress address = InetAddress.getByName(downloaderIpAddress); // Use the IP from the MessageChunk
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
@@ -540,9 +541,9 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      * @param threadId the ID of the thread to send the termination message to
      * @param nackPort the port number to send the termination message to
      */
-    private void sendTerminationMessage(int threadId,int nackPort) {
+    private void sendTerminationMessage(int threadId, String downloaderIpAddress, int nackPort) {
         try (DatagramSocket socket = new DatagramSocket()) {
-            InetAddress address = InetAddress.getByName("localhost");
+            InetAddress address = InetAddress.getByName(downloaderIpAddress); // Use the IP from the MessageChunk
             TerminationMessage terminationMessage = new TerminationMessage(threadId);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ObjectOutputStream oos = new ObjectOutputStream(baos);
