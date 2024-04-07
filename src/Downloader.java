@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.SocketTimeoutException;
 
+
 /**
  * The `Downloader` class implements the `Runnable` interface and represents a downloader
  * responsible for sending multicast messages and listening for NACK (Not Acknowledged) and
@@ -53,6 +54,7 @@ public class Downloader implements Runnable {
     private final Map<String, byte[][]> originalDataChunks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> terminationMessagesReceived = new ConcurrentHashMap<>();
     private volatile boolean shouldTerminate = false;
+    private final static int MAX_DEPTH = 5;
 
     
 
@@ -302,9 +304,18 @@ public class Downloader implements Runnable {
      */
     public void handleIndexCommand(GatewayInterface gateway) {
         try {
-            String currentUrl = gateway.fetchNextUrl();
+            URLIndexingDepthControl nextUrlDepthControl = gateway.fetchNextUrl();
     
-            if (currentUrl != null && !currentUrl.isEmpty()) {
+            if (nextUrlDepthControl != null) {
+                String currentUrl = nextUrlDepthControl.getUrl();
+                int currentDepth = nextUrlDepthControl.getDepth();
+                
+                if (currentDepth > MAX_DEPTH) {
+                    // Skip processing this URL since it's beyond the maximum depth
+                    return;
+                }
+
+
                 try{
                     Document doc = Jsoup.connect(currentUrl)
                                     .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
@@ -332,7 +343,7 @@ public class Downloader implements Runnable {
                     String foundUrl = link.absUrl("href");
                     if (!foundUrl.isEmpty() && !foundUrl.equals(currentUrl)) {
                         outboundLinks.add(foundUrl);
-                        gateway.addUrlToQueue(foundUrl);
+                        gateway.addUrlToQueue(foundUrl,currentDepth + 1);
                     }
                 }
     

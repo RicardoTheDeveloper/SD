@@ -10,11 +10,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import src.DepthControlComparator;
 
 /**
  * The Gateway class serves as a central coordinator in a distributed indexing system.
@@ -23,8 +26,8 @@ import java.util.stream.Collectors;
  */
 public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
-    /** Queue of URLs to be indexed. */
-    private ConcurrentLinkedQueue<String> urlQueue;
+    private PriorityBlockingQueue<URLIndexingDepthControl> urlQueue = new PriorityBlockingQueue<>(10, new DepthControlComparator());
+
 
     /** Tracks URLs that have been processed or are queued to prevent duplication. */
     private ConcurrentHashMap<String, Boolean> urlsSeen;
@@ -53,6 +56,12 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     // This map holds URLs that are currently being processed.
     private ConcurrentHashMap<String, Boolean> urlsInProcess;
 
+    public static final int USER_PRIORITY = 1;
+    public static final int DOWNLOADER_PRIORITY = 1;
+
+    private static final int MAX_DEPTH = 5; // or whatever maximum depth you want
+
+
     /**
      * Creates a Gateway object that initializes with a list of ISB machine IP addresses.
      * It sets up the necessary data structures and starts the periodic discovery of barrels.
@@ -63,7 +72,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     protected Gateway(List<String> isbMachineIps) throws RemoteException {
         super();
         this.isbMachineIps = isbMachineIps;
-        urlQueue = new ConcurrentLinkedQueue<>();
+        this.urlQueue = new PriorityBlockingQueue<>();
         urlsSeen = new ConcurrentHashMap<>();
         barrels = new ArrayList<>();
         searchFrequencies = new ConcurrentHashMap<>();
@@ -86,20 +95,19 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     @Override
     public String remoteSubmitURL(String url) throws RemoteException {
-        synchronized (this) { 
+        synchronized (this) {
             if (urlsSeen.putIfAbsent(url, Boolean.TRUE) == null) {
-                boolean isAdded = urlQueue.offer(url);
-                if (isAdded) {
-                    notifyDownloader();
-                    return "URL enqueued: " + url;
-                } else {
-                    return "Failed to enqueue URL: " + url;
-                }
+                // Starting depth for user-submitted URLs
+                URLIndexingDepthControl depthControl = new URLIndexingDepthControl(url, 0); 
+                urlQueue.put(depthControl); // Add to the queue
+                notifyDownloader(); // Notify waiting threads
+                return "URL enqueued with high priority: " + url;
             } else {
                 return "URL already seen, skipping: " + url;
             }
         }
     }
+
 
     /**
      * Retrieves the next URL from the queue for processing.
@@ -107,18 +115,24 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @return The next URL from the queue, or null if the queue is empty.
      * @throws RemoteException if a networking error occurs.
      */
+    
     @Override
-    public String fetchNextUrl() throws RemoteException {
-        synchronized(urlQueue) {
-            String url = urlQueue.peek(); // Get but do not remove the head of the queue
-            if (url != null && !urlsInProcess.containsKey(url)) {
-                urlsInProcess.put(url, Boolean.TRUE);
-                urlQueue.poll(); // Actually remove the head of the queue
-                return url;
+    public URLIndexingDepthControl fetchNextUrl() throws RemoteException {
+        synchronized (this) {
+            URLIndexingDepthControl depthControl = urlQueue.poll(); // Fetch and remove the URLIndexingDepthControl object
+            if (depthControl == null || depthControl.getDepth() > MAX_DEPTH) {
+                return null; // either the queue is empty or the URL is deeper than we want to index
             }
-            return null; // or throw a custom exception to signify empty or all in process
+            if (!urlsInProcess.containsKey(depthControl.getUrl())) {
+                urlsInProcess.put(depthControl.getUrl(), Boolean.TRUE);
+                return depthControl; // return the URLIndexingDepthControl object directly
+            } else {
+                return null; // URL is already being processed
+            }
         }
     }
+
+    
 
     @Override
     public void markUrlAsProcessed(String url) {
@@ -227,23 +241,21 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
  * @throws RemoteException if a networking error occurs.
  */
     @Override
-    public void addUrlToQueue(String url) throws RemoteException {
-        synchronized (this) { // Lock on the instance of Gateway
-            if (!urlQueue.contains(url)) {
-                boolean isAdded = urlQueue.offer(url);
-                if (isAdded) {
-                    notifyDownloader(); // Notify downloader threads
-                    System.out.println("URL added to queue: " + url);
-                } else {
-                    // Debug print in case of failure
-                    System.err.println("Failed to add URL to queue: " + url);
-                }
+    public void addUrlToQueue(String url, int depth){
+        synchronized (this) {
+            if (!urlsSeen.containsKey(url) && !urlsInProcess.containsKey(url) && depth < MAX_DEPTH) {
+                urlsSeen.put(url, Boolean.TRUE);
+                // Increment the depth since this URL was found by a downloader
+                URLIndexingDepthControl depthControl = new URLIndexingDepthControl(url, depth); 
+                urlQueue.put(depthControl); // Add to the queue
+                notifyDownloader();
+                System.out.println("Downloader URL added to queue at depth " + (depth) + ": " + url);
             } else {
-                // Debug print if the URL is already in the queue
-                System.out.println("URL already in queue, skipping: " + url);
+                System.out.println("URL already seen, at max depth, or in process, skipping: " + url);
             }
         }
     }
+    
 
 
 
@@ -307,8 +319,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     public void printQueueContent() {
         System.out.println("Current URLs in the Queue:");
-        for (String url : urlQueue) {
-            System.out.println(url);
+        for (URLIndexingDepthControl depthControl : urlQueue) {
+            System.out.println(depthControl.getUrl()); // Extract and print the URL
         }
     }
 

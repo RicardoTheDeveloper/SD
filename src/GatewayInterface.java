@@ -23,7 +23,9 @@ public interface GatewayInterface extends Remote {
      * @return The next URL in the queue, or null if the queue is empty.
      * @throws RemoteException If a remote invocation error occurs.
      */
-    String fetchNextUrl() throws RemoteException;
+    // In your GatewayInterface
+    URLIndexingDepthControl fetchNextUrl() throws RemoteException;
+
 
     /**
      * Searches for web pages that contain the given terms.
@@ -64,7 +66,7 @@ public interface GatewayInterface extends Remote {
      * @param url The URL to add to the queue.
      * @throws RemoteException If a remote invocation error occurs.
      */
-    void addUrlToQueue(String url) throws RemoteException;
+    void addUrlToQueue(String url,int parentDepth) throws RemoteException;
 
     /**
      * Retrieves the current status of the system.
