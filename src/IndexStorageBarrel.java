@@ -51,6 +51,7 @@ import java.text.Normalizer;
  * `IndexStorageBarrel` can synchronize their data with each other to maintain a consistent
  * view of the indexed web pages.
  */
+
 public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStorageBarrelInterface, Runnable {
 
     private String id;
@@ -419,6 +420,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
                 if (obj instanceof MessageChunk) {
                     MessageChunk chunk = (MessageChunk) obj;
                     String downloaderIpAddress = chunk.getDownloaderIpAddress(); // Retrieve the IP address
+                    System.out.println("ISB RECEIVED A PACKET FROM DOWNLOADER WITH  IP"+downloaderIpAddress);
 
                     byte[] decompressedData;
                     try (ByteArrayInputStream bais = new ByteArrayInputStream(chunk.getChunkData());

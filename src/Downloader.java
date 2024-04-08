@@ -47,7 +47,7 @@ public class Downloader implements Runnable {
     private static final AtomicInteger sharedCounter = new AtomicInteger(0);
     private final int threadId;
     private static int totalThreads = 100;
-    private String multicastAddress = "239.255.255.250";
+    private String multicastAddress = "224.0.0.252";
     private int port = 4446;
     private GatewayInterface gateway;
     private static final int MAX_UDP_PACKET_SIZE = 65507;
@@ -307,8 +307,13 @@ public class Downloader implements Runnable {
         
         try {
             URLTask currentTask = gateway.fetchNextUrl();
+            if (currentTask == null) {
+                System.out.println("No URL to process. The current task is null.");
+                return; // Encerra o método se currentTask é null
+            }
             String currentUrl = currentTask.getUrl();
             int currentPriority = currentTask.getPriority();
+            System.out.println("DOWNLOADER IS PROCESSING URL: "+currentUrl+" with priority "+currentPriority);
             
     
             if (currentUrl != null && !currentUrl.isEmpty()) {

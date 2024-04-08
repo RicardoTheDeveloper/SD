@@ -97,6 +97,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
                 if (isAdded) {
                     notifyDownloader();
                     urlOrigins.put(url, 0);
+                    printQueueContent();
                     return "User-submitted URL enqueued with high priority: " + url;
                 } else {
                     return "Failed to enqueue user URL: " + url;
@@ -120,9 +121,13 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
             if (task != null) {
                 String url = task.getUrl();
                 urlsInProcess.put(url, Boolean.TRUE);
+                System.out.println("URL BEING FETCHED: "+url);
                 return task;
             }
-            return null;
+            else{
+                return null;
+            }
+            
         }
     }
 
@@ -444,7 +449,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
                         }
                     }
                 } catch (Exception e) {
-                    System.err.println("Could not connect to registry at " + ip + ":" + port);
+                    //System.err.println("Could not connect to registry at " + ip + ":" + port);
                 }
             }
         }

@@ -231,11 +231,6 @@ public class RMIClient {
             System.err.println("Scanner has been closed unexpectedly: " + e.getMessage());
             System.exit(1); // Exit the program or handle it according to your needs
         }
-        finally {
-        if (scanner != null) {
-            scanner.close();
-        }
-    }
     
     }
 
