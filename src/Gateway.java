@@ -36,13 +36,13 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     private int nextBarrelIndex;
 
     /** Tracks the frequency of search terms across all barrels. */
-    private final Map<String, Integer> searchFrequencies;
+    private final Map<String, Integer> searchFrequencies;//Not being used!!
 
     /** Records the availability status of each barrel. */
     private final Map<String, Boolean> barrelStatus;
 
     /** Maintains response times for each barrel to monitor performance. */
-    private final Map<String, List<Double>> barrelResponseTimes;
+    private final Map<String, List<Double>> barrelResponseTimes;//Not being used!!
 
     /** ScheduledExecutorService to handle periodic tasks such as discovery of barrels. */
     private final ScheduledExecutorService scheduler;

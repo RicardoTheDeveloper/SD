@@ -28,19 +28,19 @@ import java.net.SocketTimeoutException;
  * The `Downloader` class implements the `Runnable` interface and represents a downloader
  * responsible for sending multicast messages and listening for NACK (Not Acknowledged) and
  * termination messages.
- * 
+ *
  * The `Downloader` class provides methods to send multicast messages containing page information
  * and to listen for NACK and termination messages on a datagram socket.
- * 
+ *
  * Usage:
- * 
+ *
  *     GatewayInterface gateway = new Gateway();
  *     int threadId = 1;
  *     int nackPort = 1234;
  *     Downloader downloader = new Downloader(gateway, threadId, nackPort);
  *     downloader.sendMulticastMessage(pageInfo);
  *     downloader.listenForNackAndTerminationMessages();
- * 
+ *
  */
 public class Downloader implements Runnable {
 
@@ -56,11 +56,11 @@ public class Downloader implements Runnable {
     private final ConcurrentHashMap<String, Boolean> terminationMessagesReceived = new ConcurrentHashMap<>();
     private volatile boolean shouldTerminate = false;
     private String hostIpAddress;
-    
+
 
     /**
      * Constructs an instance of Downloader.
-     * 
+     *
      * @param gateway   The Gateway interface that this Downloader communicates with.
      * @param threadId  The identifier of the thread being created.
      * @param nackPort  The port number used for NACK (Not Acknowledged) communications.
@@ -74,16 +74,16 @@ public class Downloader implements Runnable {
 
     /**
      * Sends a multicast message containing the information of a page.
-     * 
+     *
      * This method divides the page information into multiple chunks and sends each chunk
      * as a multicast packet. The chunks are compressed before sending to reduce the packet size.
      * The method automatically handles splitting the data into chunks that fit within the maximum
      * allowed size for UDP packets, performing compression on each chunk individually.
-     * 
+     *
      * @param pageInfo A {@link PageInfo} object containing the information of the page to be sent.
      *                 This object will be serialized, divided into chunks, compressed, and then
      *                 transmitted via multicast.
-     * 
+     *
      * <p>Sending process:
      * <ul>
      * <li>Serializes the {@link PageInfo} object.</li>
@@ -91,7 +91,7 @@ public class Downloader implements Runnable {
      * <li>Compresses each chunk using GZIP.</li>
      * <li>Sends each compressed chunk as a multicast packet to the defined group.</li>
      * </ul>
-     * 
+     *
      * <p>IO (input/output) errors are caught and logged to the console.
     */
     public void sendMulticastMessage(PageInfo pageInfo) {
@@ -140,7 +140,7 @@ public class Downloader implements Runnable {
 
             }
 
-        } 
+        }
         catch (IOException e) {
             System.err.println("IOException: " + e.getMessage());
             e.printStackTrace();
@@ -149,21 +149,21 @@ public class Downloader implements Runnable {
 
     /**
      * Listens for NACK (Not Acknowledged) and termination messages on a datagram socket.
-     * 
+     *
      * This method starts a loop that continuously listens for NACK and termination messages sent
      * to the port specified by {@code this.nackPort}. Upon receiving a message, it checks the type
      * of the received object:
-     * 
+     *
      * - For NACK messages, it identifies the missing data chunks and attempts to resend them.
      * - For termination messages, it checks if the message is intended for the current thread ID
      *   and, if so, performs the necessary actions to gracefully terminate the execution.
-     * 
+     *
      * The method uses a {@link DatagramSocket} to receive UDP packets, and deserialization is employed
      * to reconstruct the message objects from the packet data.
-     * 
+     *
      * <p>Exceptions during message reception or processing are caught and logged, but do not interrupt
      * the listening loop. The loop is only interrupted when the current thread is externally interrupted.
-     * 
+     *
      * <p>Notes:
      * <ul>
      * <li>NACK messages contain the indices of the missing data chunks that need to be resent to ensure
@@ -186,7 +186,7 @@ public class Downloader implements Runnable {
                     Object receivedObject = ois.readObject();
 
                     if (receivedObject instanceof NACKMessage) {
-                        
+
                         NACKMessage nackMessage = (NACKMessage) receivedObject;
                         String messageId = nackMessage.getMessageId();
                         Set<Integer> missingChunks = nackMessage.getMissingChunks();
@@ -207,17 +207,17 @@ public class Downloader implements Runnable {
                             System.err.println("No original data found for message ID: " + messageId);
                         }
                     }
-                    
+
                     else if (receivedObject instanceof TerminationMessage) {
                         TerminationMessage terminationMessage = (TerminationMessage) receivedObject;
                         if (terminationMessage.getThreadId() == this.threadId) {
-                            
+
                             shouldTerminate = true;
                             System.out.println("Termination message received for thread ID: " + this.threadId);
                         }
                     }
-                     
-                    
+
+
                 } catch (IOException | ClassNotFoundException e) {
                     System.err.println("Error handling the message: " + e.getMessage());
                 }
@@ -230,16 +230,16 @@ public class Downloader implements Runnable {
 
     /**
      * Resends a specified data chunk to the multicast address.
-     * 
+     *
      * This method is responsible for resending a data chunk that was not correctly received
      * by the recipient, as indicated by a received NACK message. The data chunk is encapsulated
      * in a {@link MessageChunk} object, which is then serialized and sent as a data packet via
      * multicast socket.
-     * 
+     *
      * @param chunkIndex The index of the chunk within the original message being resent.
      * @param messageId The unique identifier of the original message to which the chunk belongs.
      * @param chunkData The data of the chunk to be resent.
-     * 
+     *
      * <p>Resending process:
      * <ul>
      * <li>Serializes the {@link MessageChunk} object that contains the chunk index, chunk data,
@@ -247,17 +247,21 @@ public class Downloader implements Runnable {
      * <li>Packs the serialized data into a {@link DatagramPacket}.</li>
      * <li>Sends the packet to the configured multicast address.</li>
      * </ul>
-     * 
+     *
      * <p>Errors during serialization or sending process are caught, logged to the console, and
      * detailed with a stack trace for easier debugging.
     */
+
+
+
+    //lalalalala
     private void resendChunk(Integer chunkIndex, String messageId, byte[] chunkData, String downloaderIpAddress) {
         if (shouldTerminate) {
             System.out.println("Thread ID " + this.threadId + " is terminating. Not resending chunk " + chunkIndex);
             return;
         }
         try {
-            
+
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
             try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
@@ -280,11 +284,11 @@ public class Downloader implements Runnable {
 
     /**
      * Extracts the text from the first paragraph of an HTML document.
-     * 
+     *
      * This method uses the Jsoup library to parse the content of an HTML document and
      * extract the text contained in the first {@code <p>} paragraph. If the document does not
      * contain a paragraph, it returns an empty string.
-     * 
+     *
      * @param doc The HTML document to be parsed, represented by a {@link Document} object
      *            from the Jsoup library.
      * @return The text from the first paragraph of the document or an empty string if no
@@ -296,15 +300,16 @@ public class Downloader implements Runnable {
     }
 
 
+
     /**
-     * Handles the index command by fetching the next URL from the gateway, 
-     * retrieving the webpage content, extracting relevant information, and 
+     * Handles the index command by fetching the next URL from the gateway,
+     * retrieving the webpage content, extracting relevant information, and
      * sending a multicast message with the page information.
-     * 
+     *
      * @param gateway the gateway interface used to fetch URLs and add URLs to the queue
      */
     public void handleIndexCommand(GatewayInterface gateway) {
-        
+
         try {
             URLTask currentTask = gateway.fetchNextUrl();
             if (currentTask == null) {
@@ -314,8 +319,8 @@ public class Downloader implements Runnable {
             String currentUrl = currentTask.getUrl();
             int currentPriority = currentTask.getPriority();
             System.out.println("DOWNLOADER IS PROCESSING URL: "+currentUrl+" with priority "+currentPriority);
-            
-    
+
+
             if (currentUrl != null && !currentUrl.isEmpty()) {
                 try{
                     Document doc = Jsoup.connect(currentUrl)
@@ -326,19 +331,19 @@ public class Downloader implements Runnable {
                 String snippet = extractSnippet(doc);
                 Set<String> outboundLinks = new HashSet<>();
                 Set<String> uniqueWords = new HashSet<>();
-    
+
                 Consumer<String> addWord = word -> {
                     word = word.toLowerCase().replaceAll("[^a-z]", "");
                     if (!word.isEmpty() && !word.equals("www") && !word.equals("com")) {
                         uniqueWords.add(word);
                     }
                 };
-    
+
                 String[] titleWords = title.split("\\s+");
                 for (String word : titleWords) {
                     addWord.accept(word);
                 }
-    
+
                 Elements links = doc.select("a[href]");
                 for (Element link : links) {
                     String foundUrl = link.absUrl("href");
@@ -347,50 +352,50 @@ public class Downloader implements Runnable {
                         gateway.addUrlToQueue(foundUrl,currentPriority+1);
                     }
                 }
-    
-               
+
+
                 String bodyText = doc.body().text();
                 String[] bodyWords = bodyText.split("\\s+");
                 for (String word : bodyWords) {
                     addWord.accept(word);
                 }
-    
+
                 gateway.markUrlAsProcessed(currentUrl);
-    
+
                 PageInfo pageInfo = new PageInfo(currentUrl, title, snippet, uniqueWords);
                 pageInfo.setOutboundLinks(outboundLinks);
                 sendMulticastMessage(pageInfo);
 
                 }
-                
+
 
                 catch (HttpStatusException e) {
                 System.err.println("HTTP Status Exception for URL: " + currentUrl + " - " + e.getMessage());
-                
+
                 gateway.markUrlAsProcessed(currentUrl);
                 return;
             }
 
              catch (SocketTimeoutException e) {
                 System.err.println("Timeout while fetching URL: " + currentUrl + " - " + e.getMessage());
-               
-            }
-                
+
             }
 
-            
+            }
+
+
         }
         catch (RemoteException e) {
         System.err.println("Remote exception while fetching URL: " + e.getMessage());
         e.printStackTrace();
-        
+
     }
 
         catch (IOException e) {
             e.printStackTrace();
         }
     }
-    
+
 
     /**
      * Executes the main logic of the Downloader thread.
@@ -418,7 +423,7 @@ public class Downloader implements Runnable {
                     }
 
                     if (shouldTerminate) {
-                        
+
                         shouldTerminate = false;
                         continue;
                     }
@@ -445,7 +450,7 @@ public class Downloader implements Runnable {
     /**
      * The main method is the entry point of the Downloader program.
      * It initializes the necessary variables and starts multiple downloader threads.
-     * 
+     *
      * @param args The command line arguments. It should contain the following:
      *             - nackPort: The base port number for the downloader threads.
      *             - gatewayIP: The IP address of the gateway.
@@ -461,7 +466,7 @@ public class Downloader implements Runnable {
             int baseNackPort = Integer.parseInt(args[0]);
             String gatewayIP = args[1];
             int registryPort = Integer.parseInt(args[2]);
-            String hostIP = args[3]; 
+            String hostIP = args[3];
 
             Registry registry = LocateRegistry.getRegistry(gatewayIP, registryPort);
             GatewayInterface gateway = (GatewayInterface) registry.lookup("GatewayService");

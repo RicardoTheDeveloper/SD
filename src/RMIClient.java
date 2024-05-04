@@ -144,7 +144,7 @@ public class RMIClient {
                 System.out.println("Title: " + info.getTitle());
                 System.out.println("URL: " + info.getUrl());
                 System.out.println("Snippet: " + info.getSnippet());
-                System.out.println("Inbound links: " + info.getInboundLinks().size());
+                //System.out.println("Inbound links: " + info.getInboundLinks().size());
                 System.out.println("---------------------------------------");
             }
             

@@ -529,7 +529,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             try (DatagramSocket socket = new DatagramSocket()) {
                 DatagramPacket nackPacket = new DatagramPacket(nackData, nackData.length, address, downloaderNackPort);
                 socket.send(nackPacket);
-                System.out.println("NACK message sent to thread with NACK port: " + downloaderNackPort);
+                
             }
         } catch (IOException e) {
             System.err.println("Error sending NACK message: " + e.getMessage());
