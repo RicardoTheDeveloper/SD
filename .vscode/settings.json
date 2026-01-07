@@ -1,0 +1,12 @@
+{
+    "java.project.referencedLibraries": [
+        "lib/*.jar"
+    ],
+
+
+    "terminal.integrated.env.windows": {
+        "LANG": "en_US.UTF-8"
+    },
+    "terminal.integrated.unicodeVersion": "11.0"
+    
+}
